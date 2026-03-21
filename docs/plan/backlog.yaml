@@ -1,0 +1,192 @@
+# Backlog — Core State File
+# This YAML document is the single source of truth for the autopilot orchestrator.
+# Structure: themes → epics → stories, with dependency graph and status tracking.
+#
+# Status values: todo | in-progress | done | failed
+# locked: false (default) | true (set after user accepts the theme at the theme-done checkpoint)
+#   When locked: true, all artefacts referenced by the theme (VP dir, theme dir, ADRs) are immutable.
+#
+# The orchestrator reads this file before every decision and writes after every state change.
+
+backlog:
+  project: "copilot-autopilot-methodology-improvements"
+  last-updated: "2026-03-10T12:30:00Z"
+  themes:
+    - id: TH1
+      name: "Methodology Improvements"
+      status: done
+      locked: true
+      vision-ref: docs/vision_of_product/VP1-mvp/
+      depends-on: []
+      epics:
+        # ── E1: Core Schema & State ──────────────────────────────────────
+        - id: E1
+          name: "Core Schema & State"
+          status: done
+          depends-on: []
+          stories:
+            - id: TH1.E1.US1
+              title: "Introduce qualified story IDs"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E1-core-schema/stories/US1-qualified-ids.md
+              depends-on: []
+            - id: TH1.E1.US2
+              title: "Single source of truth for status"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E1-core-schema/stories/US2-single-source-of-truth.md
+              depends-on: [TH1.E1.US1]
+            - id: TH1.E1.US3
+              title: "Convert backlog to pure YAML"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E1-core-schema/stories/US3-pure-yaml-backlog.md
+              depends-on: [TH1.E1.US2]
+
+        # ── E2: Agent Consolidation ──────────────────────────────────────
+        - id: E2
+          name: "Agent Consolidation"
+          status: done
+          depends-on: [E1]
+          stories:
+            - id: TH1.E2.US1
+              title: "Create developer agent from implementer + tester"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E2-agent-consolidation/stories/US1-developer-agent.md
+              depends-on: [TH1.E1.US1]
+            - id: TH1.E2.US2
+              title: "Add review feedback loop to orchestrator"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E2-agent-consolidation/stories/US2-review-feedback-loop.md
+              depends-on: [TH1.E2.US1]
+            - id: TH1.E2.US3
+              title: "Remove refactorer agent"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E2-agent-consolidation/stories/US3-remove-refactorer.md
+              depends-on: [TH1.E2.US1]
+            - id: TH1.E2.US4
+              title: "Fold documenter into orchestrator"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E2-agent-consolidation/stories/US4-fold-documenter.md
+              depends-on: [TH1.E2.US1]
+
+        # ── E3: Instruction Deduplication ────────────────────────────────
+        - id: E3
+          name: "Instruction Deduplication"
+          status: done
+          depends-on: [E2]
+          stories:
+            - id: TH1.E3.US1
+              title: "DRY copilot-instructions.md"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E3-deduplication/stories/US1-dry-instructions.md
+              depends-on: [TH1.E2.US1]
+            - id: TH1.E3.US2
+              title: "Make agents thin, skills canonical"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E3-deduplication/stories/US2-thin-agents.md
+              depends-on: [TH1.E3.US1]
+            - id: TH1.E3.US3
+              title: "Consolidate pass-through prompts"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E3-deduplication/stories/US3-consolidate-prompts.md
+              depends-on: [TH1.E3.US2]
+
+        # ── E4: SDLC Enhancements ───────────────────────────────────────
+        - id: E4
+          name: "SDLC Enhancements"
+          status: done
+          depends-on: [E2]
+          stories:
+            - id: TH1.E4.US1
+              title: "Add user validation checkpoints"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E4-sdlc-enhancements/stories/US1-user-checkpoints.md
+              depends-on: [TH1.E2.US2]
+            - id: TH1.E4.US2
+              title: "Add spike story type"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E4-sdlc-enhancements/stories/US2-spike-story-type.md
+              depends-on: [TH1.E2.US1]
+            - id: TH1.E4.US3
+              title: "Add deployment readiness guidance"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E4-sdlc-enhancements/stories/US3-deployment-readiness.md
+              depends-on: []
+            - id: TH1.E4.US4
+              title: "Add NFR testing guidance"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E4-sdlc-enhancements/stories/US4-nfr-testing.md
+              depends-on: [TH1.E2.US1]
+            - id: TH1.E4.US5
+              title: "Add UX/accessibility review checklist"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E4-sdlc-enhancements/stories/US5-ux-accessibility.md
+              depends-on: []
+
+        # ── E5: Planning Model & Flexibility ─────────────────────────────
+        - id: E5
+          name: "Planning Model & Flexibility"
+          status: done
+          depends-on: [E1]
+          stories:
+            - id: TH1.E5.US1
+              title: "Relax VP-to-TH mapping to 1:N"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E5-planning-model/stories/US1-flexible-vp-mapping.md
+              depends-on: [TH1.E1.US1]
+            - id: TH1.E5.US2
+              title: "Add priority field to stories"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E5-planning-model/stories/US2-priority-field.md
+              depends-on: [TH1.E1.US1]
+            - id: TH1.E5.US3
+              title: "Add size/complexity field to stories"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E5-planning-model/stories/US3-size-field.md
+              depends-on: [TH1.E1.US1]
+            - id: TH1.E5.US4
+              title: "Fix or remove blocked status"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E5-planning-model/stories/US4-blocked-status.md
+              depends-on: [TH1.E1.US1]
+            - id: TH1.E5.US5
+              title: "Proportional ceremony overhead"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E5-planning-model/stories/US5-proportional-ceremony.md
+              depends-on: [TH1.E2.US3]
+            - id: TH1.E5.US6
+              title: "Fast-track trivial stories"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E5-planning-model/stories/US6-trivial-fast-track.md
+              depends-on: [TH1.E5.US2]
+            - id: TH1.E5.US7
+              title: "Simplify regression testing"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E5-planning-model/stories/US7-simplify-regression.md
+              depends-on: [TH1.E2.US1]
+
+        # ── E6: Operational Concerns ─────────────────────────────────────
+        - id: E6
+          name: "Operational Concerns"
+          status: done
+          depends-on: [E2]
+          stories:
+            - id: TH1.E6.US1
+              title: "Add git workflow guidance"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E6-operational-concerns/stories/US1-git-workflow.md
+              depends-on: [TH1.E2.US1]
+            - id: TH1.E6.US2
+              title: "Add crash recovery protocol"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E6-operational-concerns/stories/US2-crash-recovery.md
+              depends-on: [TH1.E1.US2]
+            - id: TH1.E6.US3
+              title: "Add dependency management guidance"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E6-operational-concerns/stories/US3-dependency-management.md
+              depends-on: []
+            - id: TH1.E6.US4
+              title: "Session log cleanup"
+              status: done
+              file: docs/themes/TH1-methodology-improvements/epics/E6-operational-concerns/stories/US4-session-log.md
+              depends-on: [TH1.E1.US3]
