@@ -55,5 +55,6 @@ Each topic below is owned by exactly one skill. See the skill for canonical deta
 - **Never modify vision docs during Phase 4** — vision is frozen for the theme currently in execution (future VPs can be amended at user checkpoints)
 - **Never implement multiple stories in one agent session** — 1 story = 1 developer call
 - **Never skip the code quality review at epic end** — technical debt compounds
+- **Never declare a theme release-ready with stale public docs** — before marking a theme `done` or shipping a release, update `README.md`, install snippets, command tables, and version/tag references to match the delivered functionality
 - **Never leave completed theme templates active** — move old theme's `.github/ISSUE_TEMPLATE/TH<n>-*.md` to `ISSUE_TEMPLATE/archive/` at each theme boundary
 - **Never edit locked artefacts** — once a theme has `locked: true` in `backlog.yaml`, its VP directory, theme directory, story files, and associated ADR bodies are immutable; the only allowed ADR change is updating the `Status` line to `Superseded by ADR-<NNN>` when creating a new ADR that replaces it — otherwise extend history by creating new VP<n+1>, TH<n+1>, or ADR-<NNN+1> documents instead

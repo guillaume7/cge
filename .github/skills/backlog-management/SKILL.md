@@ -64,7 +64,11 @@ When a theme is `locked: true`:
 
 ### When to set locked
 
-The orchestrator sets `locked: true` on a theme **after** the user checkpoint at the end of the theme is accepted:
+The orchestrator sets `locked: true` on a theme **after** the user checkpoint at the end of the theme is accepted and the theme-boundary release-hygiene tasks are complete:
+
+- root `README.md` and other public docs match the delivered functionality and release tag
+- release notes exist
+- completed theme issue templates have been archived
 
 ```yaml
 - id: TH1

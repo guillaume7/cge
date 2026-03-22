@@ -82,3 +82,5 @@ Start the canonical Loom loop and continue until Loom reports `COMPLETE` or tran
 4. While waiting on async gates, call `loom_heartbeat` every 30 seconds
 
 If Loom and live GitHub state diverge and cannot be reconciled safely, call `loom_abort` and return a concise operator handoff.
+
+Theme completion through Loom does not waive release hygiene: before final release or closure, ensure the root `README.md`, install instructions, command tables, and release-version references match the delivered functionality.

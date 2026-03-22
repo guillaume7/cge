@@ -43,7 +43,8 @@ When called at theme completion, compare implemented theme against original visi
 2. Read all completed stories in `docs/themes/TH<n>/`
 3. Check coverage: are all vision requirements addressed?
 4. Check scope: any scope creep beyond the vision?
-5. Return: PASS or GAPS_FOUND with specifics
+5. Check release-facing docs: does root `README.md` describe the delivered command surface, install flow, and release version accurately?
+6. Return: PASS or GAPS_FOUND with specifics
 
 ## Constraints
 

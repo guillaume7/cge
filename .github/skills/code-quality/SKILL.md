@@ -76,7 +76,7 @@ When refactoring at epic boundaries, look for:
 ## Documentation Review Checklist
 
 When reviewing documentation quality:
-- README files are up-to-date with current functionality
+- README files are up-to-date with current functionality, command surface, install flow, and latest release/version references
 - API documentation matches implementation
 - Architecture docs reflect actual component structure
 - ADRs are not contradicted by implementation

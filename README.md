@@ -42,9 +42,9 @@ CGE reduces that waste by making memory:
 - **chainable** — stdin/stdout friendly by design
 - **inspectable** — provenance, explanation, and revision diff are built in
 
-## MVP command surface
+## Current command surface
 
-The current MVP ships six commands:
+The `v0.2.0` release ships eight commands:
 
 | Command | Purpose |
 | --- | --- |
@@ -54,17 +54,19 @@ The current MVP ships six commands:
 | `graph context` | Project compact prompt-ready context |
 | `graph explain` | Show why retrieval returned specific results |
 | `graph diff` | Compare two graph revisions |
+| `graph stats` | Measure graph size and hygiene indicators |
+| `graph hygiene` | Suggest and optionally apply graph cleanup actions |
 
 ## Quick setup
 
 ### Install the released binary
 
-`v0.1.3` currently ships a Linux AMD64 archive.
+`v0.2.0` currently ships a Linux AMD64 archive.
 
 The release archive now includes the Kuzu runtime library (`libkuzu.so`) alongside the executable wrapper, so users do **not** need to install Kuzu separately for the packaged Linux release.
 
 ```bash
-VERSION=v0.1.3
+VERSION=v0.2.0
 curl -L -o cge.tar.gz \
   "https://github.com/guillaume7/cge/releases/download/${VERSION}/cge_${VERSION}_linux_amd64.tar.gz"
 tar -xzf cge.tar.gz
@@ -169,6 +171,21 @@ graph context --task "continue work on repository architecture" --max-tokens 300
 graph explain --task "what ADRs are in this repo?"
 ```
 
+### 6. Inspect graph health
+
+```bash
+graph stats
+graph hygiene
+```
+
+### 7. Apply a reviewed hygiene plan
+
+```bash
+graph hygiene > hygiene-plan.json
+# review and select action IDs in selected_action_ids first
+graph hygiene --apply --file hygiene-plan.json
+```
+
 ## Designed for chaining
 
 CGE is meant to sit inside agent workflows, not beside them.
@@ -244,6 +261,24 @@ Compare two graph revision anchors:
 graph diff --from <older-anchor> --to <newer-anchor>
 ```
 
+### `graph stats`
+
+Inspect graph size and hygiene indicators without mutating the workspace:
+
+```bash
+graph stats
+```
+
+### `graph hygiene`
+
+Generate a cleanup plan, then optionally apply a reviewed subset of actions:
+
+```bash
+graph hygiene
+graph hygiene > hygiene-plan.json
+graph hygiene --apply --file hygiene-plan.json
+```
+
 ## Stable machine-readable contract
 
 Operational commands return structured JSON envelopes.
@@ -293,7 +328,7 @@ The MVP is designed to represent both project-operating knowledge and code knowl
 
 ## Releases
 
-- Latest release: [`v0.1.3`](https://github.com/guillaume7/cge/releases/tag/v0.1.3)
+- Latest release: [`v0.2.0`](https://github.com/guillaume7/cge/releases/tag/v0.2.0)
 - Repository: [`guillaume7/cge`](https://github.com/guillaume7/cge)
 
 ## Status

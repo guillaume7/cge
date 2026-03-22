@@ -34,14 +34,14 @@ The Copilot Build Method is powered by a squad of specialized agents, each with 
 
 ### Orchestrator
 - **Phase**: 4A (Local Autopilot Execution)
-- **Role**: Squad leader. Reads the backlog, sequences work, delegates to subagents, manages the full lifecycle loop. Generates changelogs at epic boundaries and release notes at theme boundaries.
+- **Role**: Squad leader. Reads the backlog, sequences work, delegates to subagents, manages the full lifecycle loop. Generates changelogs at epic boundaries and release notes at theme boundaries, and enforces theme-boundary release hygiene (`README.md`, install docs, version references, issue-template archival).
 - **Skills**: `the-copilot-build-method`, `backlog-management`
 - **Delegates to**: All other agents
 - **Invocable**: By user (via `/run-autopilot`)
 
 ### Product Owner
 - **Phase**: 3 (Planning)
-- **Role**: Transforms product vision into themes, epics, and BDD user stories. Builds the backlog. Generates one GitHub issue template per epic (`.github/ISSUE_TEMPLATE/TH<n>-E<m>-<slug>.md`) for Loom weaving. Revalidates vision at theme completion.
+- **Role**: Transforms product vision into themes, epics, and BDD user stories. Builds the backlog. Generates one GitHub issue template per epic (`.github/ISSUE_TEMPLATE/TH<n>-E<m>-<slug>.md`) for Loom weaving. Revalidates vision and public release-facing docs at theme completion.
 - **Skills**: `the-copilot-build-method`, `bdd-stories`, `backlog-management`
 - **Invocable**: By user or orchestrator
 

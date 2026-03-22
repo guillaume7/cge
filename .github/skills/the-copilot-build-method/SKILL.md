@@ -15,7 +15,7 @@ An autonomous product development methodology powered by a squad of specialized 
 - **Incremental delivery**: Products are built in vision phases (VP<n>) that map to implementation themes (TH<n>), with 1:N mapping for large VPs
 - **Autonomous execution**: The orchestrator agent loops the squad through implement → test → review cycles
 - **Persistent state**: All progress is tracked in `docs/plan/backlog.yaml` for resumability
-- **Ceremony at boundaries**: Epic and theme completions trigger quality gates (integration tests, refactor, release notes)
+- **Ceremony at boundaries**: Epic and theme completions trigger quality gates (integration tests, refactor, release notes, and public-doc hygiene)
 
 ## The 4 Phases
 
@@ -43,7 +43,7 @@ An autonomous product development methodology powered by a squad of specialized 
 - Prompt: `/run-autopilot`
 - Loop: implement → test → review per story
 - Epic end ceremony: integration tests + refactor + review + changelog
-- Theme end ceremony: regression tests + release readiness + release notes + vision revalidation
+- Theme end ceremony: regression tests + release readiness + README/version updates + release notes + vision revalidation
 - Failed stories: troubleshooter loop (max 3 attempts, then escalate)
 
 ### Phase 4B — Loom Weaving (Loom MCP Operator)
@@ -92,7 +92,10 @@ Ceremony scales with epic size:
 ### Theme Done (Epic DoD + ceremony)
 1. All epics `done`
 2. Full test suite passes (all tests across all epics)
-3. Release readiness: artifacts build, docs complete, no `failed` stories
+3. Release readiness: artifacts build, no `failed` stories, and public docs are current:
+   - root `README.md` reflects the shipped command surface and user-visible behavior
+   - install snippets and examples match the release workflow/artifacts
+   - version and release-tag references are updated (for example `v0.2.0`)
 4. If `docs/architecture/deployment.md` exists, verify deployment readiness (CI/CD, health checks, rollback)
 5. If vision includes NFRs (performance, scalability targets), verify they are covered by test results
 6. Orchestrator produces theme release notes
@@ -217,6 +220,7 @@ Use for: driving a real browser for BDD scenario tests; taking screenshots to ve
 - Never modify vision docs during Phase 4 for the **theme currently in execution** — future VPs can be amended at user checkpoints
 - Never implement multiple stories in one agent session
 - Never skip the code quality review at epic end
+- Never mark a theme complete while `README.md`, install examples, or release-version references still describe the previous release
 - Never leave a completed theme's issue templates in `.github/ISSUE_TEMPLATE/` — archive them to `ISSUE_TEMPLATE/archive/` at theme boundary so Loom only sees the current theme's epics
 
 ## Immutability Policy

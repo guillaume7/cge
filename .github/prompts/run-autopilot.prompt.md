@@ -29,3 +29,5 @@ Before starting the loop, verify:
 Start the autopilot loop as defined in your orchestrator instructions. Process stories in dependency order, running the full cycle (implement → test → review) for each.
 
 Report progress after each story completion.
+
+At theme boundaries, do not declare the theme complete until the root `README.md`, install examples, command tables, and release-version references have been updated to match the shipped functionality.
