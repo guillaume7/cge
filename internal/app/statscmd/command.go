@@ -7,23 +7,28 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/guillaume-galp/cge/internal/app/cmdsupport"
+	"github.com/guillaume-galp/cge/internal/app/graphhealth"
 	"github.com/guillaume-galp/cge/internal/infra/kuzu"
 	"github.com/guillaume-galp/cge/internal/infra/repo"
 )
 
 type StatsReader interface {
-	Stats(cmd *cobra.Command, workspace repo.Workspace) (kuzu.GraphStats, error)
+	Analyze(cmd *cobra.Command, workspace repo.Workspace) (graphhealth.Analysis, error)
 }
 
 type graphStatsReader struct {
 	store *kuzu.Store
 }
 
-func (r graphStatsReader) Stats(cmd *cobra.Command, workspace repo.Workspace) (kuzu.GraphStats, error) {
+func (r graphStatsReader) Analyze(cmd *cobra.Command, workspace repo.Workspace) (graphhealth.Analysis, error) {
 	if r.store == nil {
 		r.store = kuzu.NewStore()
 	}
-	return r.store.Stats(cmd.Context(), workspace)
+	graph, err := r.store.ReadGraph(cmd.Context(), workspace)
+	if err != nil {
+		return graphhealth.Analysis{}, err
+	}
+	return graphhealth.AnalyzeGraph(graph)
 }
 
 func NewCommand(startDir string, manager *repo.Manager) *cobra.Command {
@@ -48,13 +53,17 @@ func newCommand(startDir string, manager *repo.Manager, reader StatsReader) *cob
 				return handleStatsError(cmd.OutOrStdout(), output, err)
 			}
 
-			stats, err := reader.Stats(cmd, workspace)
+			analysis, err := reader.Analyze(cmd, workspace)
 			if err != nil {
 				return handleStatsError(cmd.OutOrStdout(), output, err)
 			}
 
 			return cmdsupport.WriteSuccess(cmd.OutOrStdout(), output, "stats", resultEnvelope{
-				Snapshot: stats,
+				Snapshot: snapshotCounts{
+					Nodes:         analysis.Snapshot.Nodes,
+					Relationships: analysis.Snapshot.Relationships,
+				},
+				Indicators: analysis.Indicators,
 			})
 		},
 	}
@@ -65,7 +74,13 @@ func newCommand(startDir string, manager *repo.Manager, reader StatsReader) *cob
 }
 
 type resultEnvelope struct {
-	Snapshot kuzu.GraphStats `json:"snapshot"`
+	Snapshot   snapshotCounts         `json:"snapshot"`
+	Indicators graphhealth.Indicators `json:"indicators"`
+}
+
+type snapshotCounts struct {
+	Nodes         int `json:"nodes"`
+	Relationships int `json:"relationships"`
 }
 
 func handleStatsError(w io.Writer, outputPath string, err error) error {

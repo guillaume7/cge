@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	kuzudb "github.com/kuzudb/go-kuzu"
 	"github.com/spf13/cobra"
 
+	"github.com/guillaume-galp/cge/internal/app/graphhealth"
 	graphpayload "github.com/guillaume-galp/cge/internal/domain/payload"
 	"github.com/guillaume-galp/cge/internal/infra/kuzu"
 	"github.com/guillaume-galp/cge/internal/infra/repo"
@@ -85,6 +87,14 @@ func TestStatsCommandReturnsSnapshotCountsForInitializedGraphWithoutMutatingStat
 	if response.Result.Snapshot.Relationships != 1 {
 		t.Fatalf("snapshot.relationships = %d, want 1", response.Result.Snapshot.Relationships)
 	}
+	assertIndicatorsPresent(t, stdout.Bytes())
+	assertHealthIndicators(t, response.Result.Indicators, graphhealth.Indicators{
+		DuplicationRate:    0,
+		OrphanRate:         0,
+		ContradictoryFacts: 0,
+		DensityScore:       0.5,
+		ClusteringScore:    0,
+	})
 
 	graphAfter, err := store.ReadGraph(context.Background(), workspace)
 	if err != nil {
@@ -124,6 +134,103 @@ func TestStatsCommandReturnsZeroCountsForInitializedButEmptyGraph(t *testing.T) 
 	if response.Result.Snapshot.Relationships != 0 {
 		t.Fatalf("snapshot.relationships = %d, want 0", response.Result.Snapshot.Relationships)
 	}
+	assertIndicatorsPresent(t, stdout.Bytes())
+	assertHealthIndicators(t, response.Result.Indicators, graphhealth.Indicators{})
+}
+
+func TestStatsCommandReturnsComputedHealthIndicatorsForPopulatedGraph(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, workspace := initStatsWorkspace(t)
+	writeStatsRevision(t, workspace, `{
+  "schema_version": "v1",
+  "metadata": {
+    "agent_id": "developer",
+    "session_id": "sess-91",
+    "timestamp": "2026-03-21T23:05:00Z",
+    "revision": {
+      "reason": "Seed graph indicators test"
+    }
+  },
+  "nodes": [
+    {
+      "id": "story:alpha",
+      "kind": "UserStory",
+      "title": "Graph stats",
+      "summary": "Compute graph health"
+    },
+    {
+      "id": "story:alpha-copy",
+      "kind": "UserStory",
+      "title": "Graph stats",
+      "summary": "Compute graph health"
+    },
+    {
+      "id": "fact:health-on",
+      "kind": "Fact",
+      "title": "Health indicators",
+      "summary": "enabled"
+    },
+    {
+      "id": "fact:health-off",
+      "kind": "Fact",
+      "title": "Health indicators",
+      "summary": "disabled"
+    },
+    {
+      "id": "note:orphan",
+      "kind": "Note",
+      "title": "Loose note"
+    }
+  ],
+  "edges": [
+    {
+      "from": "story:alpha",
+      "to": "fact:health-on",
+      "kind": "RELATES_TO"
+    },
+    {
+      "from": "story:alpha-copy",
+      "to": "fact:health-on",
+      "kind": "RELATES_TO"
+    },
+    {
+      "from": "story:alpha",
+      "to": "story:alpha-copy",
+      "kind": "RELATED_TO"
+    },
+    {
+      "from": "fact:health-on",
+      "to": "fact:health-off",
+      "kind": "CONTRADICTS"
+    }
+  ]
+}`)
+
+	cmd := newCommand(repoDir, manager, nil)
+	stdout := &bytes.Buffer{}
+	cmd.SetOut(stdout)
+	cmd.SetErr(&bytes.Buffer{})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("ExecuteContext returned error: %v", err)
+	}
+
+	response := decodeStatsSuccessResponse(t, stdout.Bytes())
+	if response.Result.Snapshot.Nodes != 5 {
+		t.Fatalf("snapshot.nodes = %d, want 5", response.Result.Snapshot.Nodes)
+	}
+	if response.Result.Snapshot.Relationships != 4 {
+		t.Fatalf("snapshot.relationships = %d, want 4", response.Result.Snapshot.Relationships)
+	}
+	assertIndicatorsPresent(t, stdout.Bytes())
+	assertHealthIndicators(t, response.Result.Indicators, graphhealth.Indicators{
+		DuplicationRate:    0.2,
+		OrphanRate:         0.2,
+		ContradictoryFacts: 1,
+		DensityScore:       0.2,
+		ClusteringScore:    0.7778,
+	})
 }
 
 func TestStatsCommandReturnsStructuredErrorForMissingWorkspace(t *testing.T) {
@@ -219,9 +326,18 @@ func TestStatsCommandWritesValidJSONToFile(t *testing.T) {
 
 	repoDir, manager, _ := initStatsWorkspace(t)
 	reader := &mockStatsReader{
-		stats: kuzu.GraphStats{
-			Nodes:         7,
-			Relationships: 11,
+		analysis: graphhealth.Analysis{
+			Snapshot: kuzu.GraphStats{
+				Nodes:         7,
+				Relationships: 11,
+			},
+			Indicators: graphhealth.Indicators{
+				DuplicationRate:    0.25,
+				OrphanRate:         0.5,
+				ContradictoryFacts: 2,
+				DensityScore:       0.3,
+				ClusteringScore:    0.75,
+			},
 		},
 	}
 
@@ -259,22 +375,24 @@ func TestStatsCommandWritesValidJSONToFile(t *testing.T) {
 	if response.Result.Snapshot.Nodes != 7 || response.Result.Snapshot.Relationships != 11 {
 		t.Fatalf("file response snapshot = %#v, want nodes=7 relationships=11", response.Result.Snapshot)
 	}
+	assertIndicatorsPresent(t, filePayload)
+	assertHealthIndicators(t, response.Result.Indicators, reader.analysis.Indicators)
 }
 
 type mockStatsReader struct {
-	stats         kuzu.GraphStats
+	analysis      graphhealth.Analysis
 	err           error
 	calls         int
 	lastWorkspace repo.Workspace
 }
 
-func (r *mockStatsReader) Stats(_ *cobra.Command, workspace repo.Workspace) (kuzu.GraphStats, error) {
+func (r *mockStatsReader) Analyze(_ *cobra.Command, workspace repo.Workspace) (graphhealth.Analysis, error) {
 	r.calls++
 	r.lastWorkspace = workspace
 	if r.err != nil {
-		return kuzu.GraphStats{}, r.err
+		return graphhealth.Analysis{}, r.err
 	}
-	return r.stats, nil
+	return r.analysis, nil
 }
 
 func initStatsWorkspace(t *testing.T) (string, *repo.Manager, repo.Workspace) {
@@ -360,8 +478,14 @@ type statsSuccessResponse struct {
 	Command       string `json:"command"`
 	Status        string `json:"status"`
 	Result        struct {
-		Snapshot kuzu.GraphStats `json:"snapshot"`
+		Snapshot   statsSnapshotCounts    `json:"snapshot"`
+		Indicators graphhealth.Indicators `json:"indicators"`
 	} `json:"result"`
+}
+
+type statsSnapshotCounts struct {
+	Nodes         int `json:"nodes"`
+	Relationships int `json:"relationships"`
 }
 
 type statsErrorResponse struct {
@@ -395,6 +519,58 @@ func decodeStatsErrorResponse(t *testing.T, payload []byte) statsErrorResponse {
 		t.Fatalf("json.Unmarshal stats error response: %v\npayload: %s", err, payload)
 	}
 	return response
+}
+
+func assertIndicatorsPresent(t *testing.T, payload []byte) {
+	t.Helper()
+
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal stats payload map: %v\npayload: %s", err, payload)
+	}
+
+	result, ok := decoded["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("result = %#v, want object", decoded["result"])
+	}
+
+	indicators, ok := result["indicators"].(map[string]any)
+	if !ok {
+		t.Fatalf("result.indicators = %#v, want object", result["indicators"])
+	}
+
+	for _, key := range []string{"duplication_rate", "orphan_rate", "contradictory_facts", "density_score", "clustering_score"} {
+		value, ok := indicators[key]
+		if !ok {
+			t.Fatalf("result.indicators missing key %q in payload %s", key, payload)
+		}
+		if value == nil {
+			t.Fatalf("result.indicators[%q] = nil, want numeric value", key)
+		}
+		if _, ok := value.(float64); !ok {
+			t.Fatalf("result.indicators[%q] = %#v (%T), want numeric value", key, value, value)
+		}
+	}
+}
+
+func assertHealthIndicators(t *testing.T, got, want graphhealth.Indicators) {
+	t.Helper()
+
+	assertFloatEquals(t, "duplication_rate", got.DuplicationRate, want.DuplicationRate)
+	assertFloatEquals(t, "orphan_rate", got.OrphanRate, want.OrphanRate)
+	if got.ContradictoryFacts != want.ContradictoryFacts {
+		t.Fatalf("contradictory_facts = %d, want %d", got.ContradictoryFacts, want.ContradictoryFacts)
+	}
+	assertFloatEquals(t, "density_score", got.DensityScore, want.DensityScore)
+	assertFloatEquals(t, "clustering_score", got.ClusteringScore, want.ClusteringScore)
+}
+
+func assertFloatEquals(t *testing.T, field string, got, want float64) {
+	t.Helper()
+
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("%s = %v, want %v", field, got, want)
+	}
 }
 
 func countValue(value any) int {
