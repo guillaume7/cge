@@ -23,7 +23,7 @@ func TestRootCommandIncludesMVPCommands(t *testing.T) {
 		available[subcommand.Name()] = true
 	}
 
-	for _, name := range []string{"init", "write", "query", "context", "explain", "diff"} {
+	for _, name := range []string{"init", "write", "query", "context", "explain", "diff", "stats", "hygiene"} {
 		if !available[name] {
 			t.Fatalf("command %q not registered", name)
 		}

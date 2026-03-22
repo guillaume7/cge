@@ -10,6 +10,7 @@ import (
 	"github.com/guillaume-galp/cge/internal/app/contextcmd"
 	"github.com/guillaume-galp/cge/internal/app/diffcmd"
 	"github.com/guillaume-galp/cge/internal/app/explaincmd"
+	"github.com/guillaume-galp/cge/internal/app/hygienecmd"
 	"github.com/guillaume-galp/cge/internal/app/initcmd"
 	"github.com/guillaume-galp/cge/internal/app/querycmd"
 	"github.com/guillaume-galp/cge/internal/app/statscmd"
@@ -37,6 +38,7 @@ func NewRootCommand(startDir string, manager *repo.Manager) *cobra.Command {
 		explaincmd.NewCommand(startDir, manager),
 		diffcmd.NewCommand(startDir, manager),
 		statscmd.NewCommand(startDir, manager),
+		hygienecmd.NewCommand(startDir, manager),
 	)
 	return cmd
 }

@@ -1,4 +1,4 @@
-# Project Setup — VP1 Cognitive Graph Engine MVP
+# Project Setup — Cognitive Graph Engine VP1 + VP2
 
 ## Repository Structure
 
@@ -16,11 +16,15 @@ internal/
     contextcmd/
     explaincmd/
     diffcmd/
+    statscmd/
+    hygienecmd/
   domain/
     entity/
     retrieval/
     payload/
     revision/
+    hygiene/
+    stats/
   infra/
     repo/
     kuzu/
@@ -87,6 +91,8 @@ Minimum test layers:
 - retrieval ranking tests with fixtures
 - context projection golden tests
 - diff/explain output tests
+- graph stats tests for indicator correctness and edge cases
+- hygiene suggestion/apply tests for duplicates, orphans, and contradictions
 
 ## Setup Principles
 
@@ -94,8 +100,11 @@ Minimum test layers:
 - no external services required
 - reproducible local development
 - easy shell-based experimentation with stdin/stdout
+- explicit local workflows for stats and hygiene without background daemons
 
 ## No Deployment Document For MVP
 
 The MVP is a local CLI without a service deployment target, so
 `docs/architecture/deployment.md` is intentionally omitted.
+
+This remains true for VP2.

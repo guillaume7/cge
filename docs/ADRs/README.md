@@ -11,6 +11,8 @@ documented here.
 - `ADR-004-entity-centric-provenance-model.md`
 - `ADR-005-versioned-native-json-payload.md`
 - `ADR-006-hybrid-retrieval-and-projection.md`
+- `ADR-007-suggest-first-graph-hygiene.md`
+- `ADR-008-on-demand-graph-stats.md`
 
 ## Status Note
 
