@@ -703,6 +703,332 @@ func TestHygieneCommandSuggestReturnsStructuredErrorWhenContradictionAnalysisFai
 	}
 }
 
+func TestHygieneCommandApplyExecutesExplicitPlanAndReturnsRevisionAnchor(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, noisyGraphPayload)
+
+	store := kuzu.NewStore()
+	revisionBeforeApply, err := store.CurrentRevision(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("CurrentRevision before apply returned error: %v", err)
+	}
+	if !revisionBeforeApply.Exists {
+		t.Fatal("expected an initial revision before hygiene apply")
+	}
+
+	suggestCmd := newCommand(repoDir, manager, nil)
+	suggestStdout := &bytes.Buffer{}
+	suggestCmd.SetOut(suggestStdout)
+	suggestCmd.SetErr(&bytes.Buffer{})
+	if err := suggestCmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("suggest ExecuteContext returned error: %v", err)
+	}
+
+	suggestResponse := decodeHygieneSuggestResponse(t, suggestStdout.Bytes())
+	plan := suggestResponse.Result.Plan
+
+	var duplicateActionID string
+	var orphanActionID string
+	for _, action := range plan.Actions {
+		switch action.Type {
+		case graphhealth.ActionConsolidateDuplicate:
+			duplicateActionID = action.ID
+		case graphhealth.ActionPruneOrphan:
+			if len(action.TargetIDs) == 1 && action.TargetIDs[0] == "note:orphan-ideas" {
+				orphanActionID = action.ID
+			}
+		}
+	}
+	if duplicateActionID == "" {
+		t.Fatalf("expected duplicate action in plan, got %#v", plan.Actions)
+	}
+	if orphanActionID == "" {
+		t.Fatalf("expected orphan action for note:orphan-ideas in plan, got %#v", plan.Actions)
+	}
+
+	selectedActionIDs := []string{duplicateActionID, orphanActionID}
+	plan.SelectedActionIDs = selectedActionIDs
+	planPath := filepath.Join(t.TempDir(), "apply-plan.json")
+	planPayload, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("json.Marshal plan: %v", err)
+	}
+	if err := os.WriteFile(planPath, planPayload, 0o644); err != nil {
+		t.Fatalf("WriteFile plan: %v", err)
+	}
+
+	applyCmd := newCommand(repoDir, manager, nil)
+	applyStdout := &bytes.Buffer{}
+	applyCmd.SetOut(applyStdout)
+	applyCmd.SetErr(&bytes.Buffer{})
+	applyCmd.SetArgs([]string{"--apply", "--file", planPath})
+	if err := applyCmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("apply ExecuteContext returned error: %v", err)
+	}
+
+	var response struct {
+		SchemaVersion string `json:"schema_version"`
+		Command       string `json:"command"`
+		Status        string `json:"status"`
+		Result        struct {
+			Mode              string                     `json:"mode"`
+			Applied           graphhealth.AppliedSummary `json:"applied"`
+			SelectedActionIDs []string                   `json:"selected_action_ids"`
+			BeforeRevision    kuzu.CurrentRevisionState  `json:"before_revision"`
+			Revision          kuzu.RevisionWriteSummary  `json:"revision"`
+			SyncSummary       kuzu.GraphSyncSummary      `json:"sync_summary"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(applyStdout.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal apply response: %v\npayload: %s", err, applyStdout.Bytes())
+	}
+
+	if response.Status != "ok" {
+		t.Fatalf("status = %q, want ok", response.Status)
+	}
+	if response.Command != "hygiene" {
+		t.Fatalf("command = %q, want hygiene", response.Command)
+	}
+	if response.Result.Mode != "apply" {
+		t.Fatalf("result.mode = %q, want apply", response.Result.Mode)
+	}
+	assertNonEmptyHexLikeString(t, "result.revision.anchor", response.Result.Revision.Anchor)
+	if response.Result.SyncSummary.Revision.Anchor != response.Result.Revision.Anchor {
+		t.Fatalf("sync_summary.revision.anchor = %q, want %q", response.Result.SyncSummary.Revision.Anchor, response.Result.Revision.Anchor)
+	}
+	if !reflect.DeepEqual(response.Result.SelectedActionIDs, selectedActionIDs) {
+		t.Fatalf("selected_action_ids = %#v, want %#v", response.Result.SelectedActionIDs, selectedActionIDs)
+	}
+	if !response.Result.BeforeRevision.Exists {
+		t.Fatal("expected before_revision.exists to be true")
+	}
+	if response.Result.BeforeRevision.Revision.Anchor != revisionBeforeApply.Revision.Anchor {
+		t.Fatalf("before_revision.revision.anchor = %q, want %q", response.Result.BeforeRevision.Revision.Anchor, revisionBeforeApply.Revision.Anchor)
+	}
+	if response.Result.Applied.TotalActions != len(selectedActionIDs) {
+		t.Fatalf("applied.total_actions = %d, want %d", response.Result.Applied.TotalActions, len(selectedActionIDs))
+	}
+	if response.Result.Applied.ConsolidatedDuplicates != 1 {
+		t.Fatalf("applied.consolidated_duplicates = %d, want 1", response.Result.Applied.ConsolidatedDuplicates)
+	}
+	if response.Result.Applied.PrunedOrphans != 1 {
+		t.Fatalf("applied.pruned_orphans = %d, want 1", response.Result.Applied.PrunedOrphans)
+	}
+	if response.Result.Applied.ResolvedContradictions != 0 {
+		t.Fatalf("applied.resolved_contradictions = %d, want 0", response.Result.Applied.ResolvedContradictions)
+	}
+
+	revisionAfterApply, err := store.CurrentRevision(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("CurrentRevision after apply returned error: %v", err)
+	}
+	if !revisionAfterApply.Exists {
+		t.Fatal("expected revision after apply")
+	}
+	if revisionAfterApply.Revision.Anchor != response.Result.Revision.Anchor {
+		t.Fatalf("current revision anchor = %q, want %q", revisionAfterApply.Revision.Anchor, response.Result.Revision.Anchor)
+	}
+}
+
+func TestHygieneCommandApplyRejectsWhenNoFileProvided(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, _ := initHygieneWorkspace(t)
+
+	cmd := newCommand(repoDir, manager, nil)
+	stdout := &bytes.Buffer{}
+	cmd.SetOut(stdout)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--apply"})
+
+	err := cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	response := decodeHygieneErrorResponse(t, stdout.Bytes())
+	if response.Status != "error" {
+		t.Fatalf("status = %q, want error", response.Status)
+	}
+	if response.Command != "hygiene" {
+		t.Fatalf("command = %q, want hygiene", response.Command)
+	}
+	if response.Error.Category != "validation_error" {
+		t.Fatalf("error.category = %q, want validation_error", response.Error.Category)
+	}
+	if response.Error.Type != "input_error" {
+		t.Fatalf("error.type = %q, want input_error", response.Error.Type)
+	}
+	if response.Error.Code != "missing_hygiene_plan" {
+		t.Fatalf("error.code = %q, want missing_hygiene_plan", response.Error.Code)
+	}
+}
+
+func TestHygieneCommandApplyRejectsWhenNoActionsSelected(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, noisyGraphPayload)
+
+	suggestCmd := newCommand(repoDir, manager, nil)
+	suggestStdout := &bytes.Buffer{}
+	suggestCmd.SetOut(suggestStdout)
+	suggestCmd.SetErr(&bytes.Buffer{})
+	if err := suggestCmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("suggest ExecuteContext returned error: %v", err)
+	}
+
+	plan := decodeHygieneSuggestResponse(t, suggestStdout.Bytes()).Result.Plan
+	plan.SelectedActionIDs = []string{}
+
+	planPath := filepath.Join(t.TempDir(), "empty-selection-plan.json")
+	planPayload, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("json.Marshal plan: %v", err)
+	}
+	if err := os.WriteFile(planPath, planPayload, 0o644); err != nil {
+		t.Fatalf("WriteFile plan: %v", err)
+	}
+
+	applyCmd := newCommand(repoDir, manager, nil)
+	applyStdout := &bytes.Buffer{}
+	applyCmd.SetOut(applyStdout)
+	applyCmd.SetErr(&bytes.Buffer{})
+	applyCmd.SetArgs([]string{"--apply", "--file", planPath})
+
+	err = applyCmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	response := decodeHygieneErrorResponse(t, applyStdout.Bytes())
+	if response.Status != "error" {
+		t.Fatalf("status = %q, want error", response.Status)
+	}
+	if response.Command != "hygiene" {
+		t.Fatalf("command = %q, want hygiene", response.Command)
+	}
+	if response.Error.Category != "validation_error" {
+		t.Fatalf("error.category = %q, want validation_error", response.Error.Category)
+	}
+	if response.Error.Type != "input_error" {
+		t.Fatalf("error.type = %q, want input_error", response.Error.Type)
+	}
+	if response.Error.Code != "no_selected_hygiene_actions" {
+		t.Fatalf("error.code = %q, want no_selected_hygiene_actions", response.Error.Code)
+	}
+}
+
+func TestHygieneCommandApplyOnlySelectedSubset(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, noisyGraphPayload)
+
+	suggestCmd := newCommand(repoDir, manager, nil)
+	suggestStdout := &bytes.Buffer{}
+	suggestCmd.SetOut(suggestStdout)
+	suggestCmd.SetErr(&bytes.Buffer{})
+	if err := suggestCmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("suggest ExecuteContext returned error: %v", err)
+	}
+
+	plan := decodeHygieneSuggestResponse(t, suggestStdout.Bytes()).Result.Plan
+	var orphanActionID string
+	for _, action := range plan.Actions {
+		if action.Type == graphhealth.ActionPruneOrphan && len(action.TargetIDs) == 1 && action.TargetIDs[0] == "note:orphan-ideas" {
+			orphanActionID = action.ID
+			break
+		}
+	}
+	if orphanActionID == "" {
+		t.Fatalf("expected orphan action for note:orphan-ideas in plan, got %#v", plan.Actions)
+	}
+	plan.SelectedActionIDs = []string{orphanActionID}
+
+	planPath := filepath.Join(t.TempDir(), "orphan-only-plan.json")
+	planPayload, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("json.Marshal plan: %v", err)
+	}
+	if err := os.WriteFile(planPath, planPayload, 0o644); err != nil {
+		t.Fatalf("WriteFile plan: %v", err)
+	}
+
+	applyCmd := newCommand(repoDir, manager, nil)
+	applyStdout := &bytes.Buffer{}
+	applyCmd.SetOut(applyStdout)
+	applyCmd.SetErr(&bytes.Buffer{})
+	applyCmd.SetArgs([]string{"--apply", "--file", planPath})
+	if err := applyCmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("apply ExecuteContext returned error: %v", err)
+	}
+
+	var response struct {
+		Status  string `json:"status"`
+		Command string `json:"command"`
+		Result  struct {
+			Mode              string                     `json:"mode"`
+			Applied           graphhealth.AppliedSummary `json:"applied"`
+			SelectedActionIDs []string                   `json:"selected_action_ids"`
+			SyncSummary       kuzu.GraphSyncSummary      `json:"sync_summary"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(applyStdout.Bytes(), &response); err != nil {
+		t.Fatalf("json.Unmarshal apply response: %v\npayload: %s", err, applyStdout.Bytes())
+	}
+	if response.Status != "ok" {
+		t.Fatalf("status = %q, want ok", response.Status)
+	}
+	if response.Command != "hygiene" {
+		t.Fatalf("command = %q, want hygiene", response.Command)
+	}
+	if response.Result.Mode != "apply" {
+		t.Fatalf("result.mode = %q, want apply", response.Result.Mode)
+	}
+	if !reflect.DeepEqual(response.Result.SelectedActionIDs, []string{orphanActionID}) {
+		t.Fatalf("selected_action_ids = %#v, want %#v", response.Result.SelectedActionIDs, []string{orphanActionID})
+	}
+	if response.Result.Applied.TotalActions != 1 {
+		t.Fatalf("applied.total_actions = %d, want 1", response.Result.Applied.TotalActions)
+	}
+	if response.Result.Applied.PrunedOrphans != 1 {
+		t.Fatalf("applied.pruned_orphans = %d, want 1", response.Result.Applied.PrunedOrphans)
+	}
+	if response.Result.Applied.ConsolidatedDuplicates != 0 {
+		t.Fatalf("applied.consolidated_duplicates = %d, want 0", response.Result.Applied.ConsolidatedDuplicates)
+	}
+	if response.Result.SyncSummary.Nodes.RemovedCount != 1 {
+		t.Fatalf("sync_summary.nodes.removed_count = %d, want 1", response.Result.SyncSummary.Nodes.RemovedCount)
+	}
+	if len(response.Result.SyncSummary.Nodes.Removed) != 1 || response.Result.SyncSummary.Nodes.Removed[0].ID != "note:orphan-ideas" {
+		t.Fatalf("sync_summary.nodes.removed = %#v, want only note:orphan-ideas", response.Result.SyncSummary.Nodes.Removed)
+	}
+
+	graphAfterApply, err := kuzu.NewStore().ReadGraph(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("ReadGraph after apply returned error: %v", err)
+	}
+	nodeIDs := map[string]struct{}{}
+	for _, node := range graphAfterApply.Nodes {
+		nodeIDs[node.ID] = struct{}{}
+	}
+	if _, ok := nodeIDs["note:orphan-ideas"]; ok {
+		t.Fatal("expected note:orphan-ideas to be pruned")
+	}
+	if _, ok := nodeIDs["task:backlog-cleanup"]; !ok {
+		t.Fatal("expected unselected orphan task:backlog-cleanup to remain")
+	}
+	if _, ok := nodeIDs["doc:graph-stats-a"]; !ok {
+		t.Fatal("expected doc:graph-stats-a to remain because duplicate action was not selected")
+	}
+	if _, ok := nodeIDs["doc:graph-stats-b"]; !ok {
+		t.Fatal("expected doc:graph-stats-b to remain because duplicate action was not selected")
+	}
+}
+
 func initHygieneWorkspace(t *testing.T) (string, *repo.Manager, repo.Workspace) {
 	t.Helper()
 
