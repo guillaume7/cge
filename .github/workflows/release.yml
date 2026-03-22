@@ -36,9 +36,24 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           binary_dir="dist/cge_${GITHUB_REF_NAME}_linux_amd64"
-          mkdir -p "$binary_dir"
-          go build -trimpath -o "$binary_dir/graph" ./cmd/graph
+          mkdir -p "$binary_dir/lib"
+          kuzu_module_dir=$(go list -f '{{.Dir}}' -m github.com/kuzudb/go-kuzu)
+          go build -trimpath -o "$binary_dir/graph.bin" ./cmd/graph
+          cp "$kuzu_module_dir/lib/dynamic/linux-amd64/libkuzu.so" "$binary_dir/lib/libkuzu.so"
           cp README.md "$binary_dir/README.md"
+          cat > "$binary_dir/graph" <<'EOF'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          existing_ld_library_path="${LD_LIBRARY_PATH:-}"
+          if [ -n "$existing_ld_library_path" ]; then
+            export LD_LIBRARY_PATH="$script_dir/lib:$existing_ld_library_path"
+          else
+            export LD_LIBRARY_PATH="$script_dir/lib"
+          fi
+          exec "$script_dir/graph.bin" "$@"
+          EOF
+          chmod 0755 "$binary_dir/graph"
           tar -C dist -czf "dist/cge_${GITHUB_REF_NAME}_linux_amd64.tar.gz" "$(basename "$binary_dir")"
           sha256sum "dist/cge_${GITHUB_REF_NAME}_linux_amd64.tar.gz" > "dist/cge_${GITHUB_REF_NAME}_linux_amd64.tar.gz.sha256"
 

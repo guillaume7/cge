@@ -59,14 +59,21 @@ The current MVP ships six commands:
 
 ### Install the released binary
 
-`v0.1.1` currently ships a Linux AMD64 archive.
+`v0.1.2` currently ships a Linux AMD64 archive.
+
+The release archive now includes the Kuzu runtime library (`libkuzu.so`) alongside the executable wrapper, so users do **not** need to install Kuzu separately for the packaged Linux release.
 
 ```bash
-VERSION=v0.1.1
+VERSION=v0.1.2
 curl -L -o cge.tar.gz \
   "https://github.com/guillaume7/cge/releases/download/${VERSION}/cge_${VERSION}_linux_amd64.tar.gz"
 tar -xzf cge.tar.gz
-sudo install -m 0755 cge_${VERSION}_linux_amd64/graph /usr/local/bin/graph
+
+# keep the bundled lib/ directory next to the launcher
+sudo mkdir -p /opt/cge
+sudo cp -R cge_${VERSION}_linux_amd64/. /opt/cge/
+sudo ln -sf /opt/cge/graph /usr/local/bin/graph
+
 graph --help
 ```
 
@@ -76,6 +83,7 @@ Requirements:
 
 - Go `1.22+`
 - a machine able to build the embedded Kuzu-backed CLI
+- access to the Go module-managed Kuzu shared library at runtime during local development builds
 
 ```bash
 git clone https://github.com/guillaume7/cge.git
@@ -285,7 +293,7 @@ The MVP is designed to represent both project-operating knowledge and code knowl
 
 ## Releases
 
-- Latest release: [`v0.1.1`](https://github.com/guillaume7/cge/releases/tag/v0.1.1)
+- Latest release: [`v0.1.2`](https://github.com/guillaume7/cge/releases/tag/v0.1.2)
 - Repository: [`guillaume7/cge`](https://github.com/guillaume7/cge)
 
 ## Status
