@@ -1152,6 +1152,247 @@ func TestHygieneCommandApplyRejectsWhenNoActionsSelected(t *testing.T) {
 	}
 }
 
+func TestHygieneCommandApplyRejectsStalePlan(t *testing.T) {
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, noisyGraphPayload)
+
+	stalePlan := runHygieneSuggestCommand(t, repoDir, manager).Result.Plan
+	if len(stalePlan.Actions) == 0 {
+		t.Fatalf("plan.actions = %#v, want at least one action", stalePlan.Actions)
+	}
+	stalePlan.SelectedActionIDs = []string{stalePlan.Actions[0].ID}
+	mutateHygieneGraphState(t, repoDir,
+		"MATCH (e:Entity {id: 'doc:graph-stats-a'}) SET e.summary = 'Weekly graph metrics overview (mutated after suggest)';",
+	)
+
+	store := kuzu.NewStore()
+	graphBefore, err := store.ReadGraph(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("ReadGraph before stale apply returned error: %v", err)
+	}
+	revisionBefore, err := store.CurrentRevision(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("CurrentRevision before stale apply returned error: %v", err)
+	}
+	revisionCountBefore := countHygieneRevisionNodes(t, workspace)
+
+	response := runHygieneApplyCommandExpectError(t, repoDir, manager, stalePlan)
+	if response.Status != "error" {
+		t.Fatalf("status = %q, want error", response.Status)
+	}
+	if response.Command != "hygiene" {
+		t.Fatalf("command = %q, want hygiene", response.Command)
+	}
+	if response.Error.Category != "validation_error" {
+		t.Fatalf("error.category = %q, want validation_error", response.Error.Category)
+	}
+	if response.Error.Type != "input_error" {
+		t.Fatalf("error.type = %q, want input_error", response.Error.Type)
+	}
+	if response.Error.Code != "stale_hygiene_plan" {
+		t.Fatalf("error.code = %q, want stale_hygiene_plan", response.Error.Code)
+	}
+
+	graphAfter, err := store.ReadGraph(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("ReadGraph after stale apply returned error: %v", err)
+	}
+	if !graphsEqual(graphBefore, graphAfter) {
+		t.Fatalf("graph changed after stale hygiene apply rejection\nbefore: %#v\nafter: %#v", graphBefore, graphAfter)
+	}
+
+	revisionAfter, err := store.CurrentRevision(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("CurrentRevision after stale apply returned error: %v", err)
+	}
+	if !reflect.DeepEqual(revisionBefore, revisionAfter) {
+		t.Fatalf("revision changed after stale hygiene apply rejection\nbefore: %#v\nafter: %#v", revisionBefore, revisionAfter)
+	}
+
+	revisionCountAfter := countHygieneRevisionNodes(t, workspace)
+	if revisionCountAfter != revisionCountBefore {
+		t.Fatalf("revision count changed after stale hygiene apply rejection\nbefore: %d\nafter: %d", revisionCountBefore, revisionCountAfter)
+	}
+}
+
+func TestHygieneCommandApplyRejectsUnsupportedActionType(t *testing.T) {
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, noisyGraphPayload)
+
+	validPlan := runHygieneSuggestCommand(t, repoDir, manager).Result.Plan
+	unsupportedPlan := graphhealth.HygienePlan{
+		SnapshotAnchor: validPlan.SnapshotAnchor,
+		Snapshot:       validPlan.Snapshot,
+		Suggestions:    validPlan.Suggestions,
+		Actions: []graphhealth.HygieneAction{
+			{
+				ID:          "bad:action",
+				Type:        "delete_everything",
+				TargetIDs:   []string{"doc:graph-stats-a"},
+				Explanation: "bad action",
+			},
+		},
+		SelectedActionIDs: []string{"bad:action"},
+	}
+
+	store := kuzu.NewStore()
+	graphBefore, err := store.ReadGraph(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("ReadGraph before unsupported apply returned error: %v", err)
+	}
+	revisionCountBefore := countHygieneRevisionNodes(t, workspace)
+
+	response := runHygieneApplyCommandExpectError(t, repoDir, manager, unsupportedPlan)
+	if response.Status != "error" {
+		t.Fatalf("status = %q, want error", response.Status)
+	}
+	if response.Command != "hygiene" {
+		t.Fatalf("command = %q, want hygiene", response.Command)
+	}
+	if response.Error.Category != "validation_error" {
+		t.Fatalf("error.category = %q, want validation_error", response.Error.Category)
+	}
+	if response.Error.Type != "input_error" {
+		t.Fatalf("error.type = %q, want input_error", response.Error.Type)
+	}
+	if response.Error.Code != "unsupported_hygiene_action" {
+		t.Fatalf("error.code = %q, want unsupported_hygiene_action", response.Error.Code)
+	}
+
+	graphAfter, err := store.ReadGraph(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("ReadGraph after unsupported apply returned error: %v", err)
+	}
+	if !graphsEqual(graphBefore, graphAfter) {
+		t.Fatalf("graph changed after unsupported hygiene apply rejection\nbefore: %#v\nafter: %#v", graphBefore, graphAfter)
+	}
+
+	revisionCountAfter := countHygieneRevisionNodes(t, workspace)
+	if revisionCountAfter != revisionCountBefore {
+		t.Fatalf("revision count changed after unsupported hygiene apply rejection\nbefore: %d\nafter: %d", revisionCountBefore, revisionCountAfter)
+	}
+}
+
+func TestHygieneCommandApplyRejectsMissingTargetEntity(t *testing.T) {
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, noisyGraphPayload)
+
+	validPlan := runHygieneSuggestCommand(t, repoDir, manager).Result.Plan
+	missingTargetPlan := graphhealth.HygienePlan{
+		SnapshotAnchor: validPlan.SnapshotAnchor,
+		Snapshot:       validPlan.Snapshot,
+		Suggestions:    validPlan.Suggestions,
+		Actions: []graphhealth.HygieneAction{
+			{
+				ID:          "missing:node",
+				Type:        graphhealth.ActionPruneOrphan,
+				TargetIDs:   []string{"node:missing"},
+				Explanation: "missing target",
+			},
+		},
+		SelectedActionIDs: []string{"missing:node"},
+	}
+
+	store := kuzu.NewStore()
+	graphBefore, err := store.ReadGraph(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("ReadGraph before missing-target apply returned error: %v", err)
+	}
+	revisionCountBefore := countHygieneRevisionNodes(t, workspace)
+
+	response := runHygieneApplyCommandExpectError(t, repoDir, manager, missingTargetPlan)
+	if response.Status != "error" {
+		t.Fatalf("status = %q, want error", response.Status)
+	}
+	if response.Command != "hygiene" {
+		t.Fatalf("command = %q, want hygiene", response.Command)
+	}
+	if response.Error.Category != "validation_error" {
+		t.Fatalf("error.category = %q, want validation_error", response.Error.Category)
+	}
+	if response.Error.Type != "input_error" {
+		t.Fatalf("error.type = %q, want input_error", response.Error.Type)
+	}
+	if response.Error.Code != "unsafe_hygiene_plan" {
+		t.Fatalf("error.code = %q, want unsafe_hygiene_plan", response.Error.Code)
+	}
+	reason, _ := response.Error.Details["reason"].(string)
+	if !strings.Contains(reason, "references missing node") {
+		t.Fatalf("error.details.reason = %#v, want missing node detail", response.Error.Details["reason"])
+	}
+
+	graphAfter, err := store.ReadGraph(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("ReadGraph after missing-target apply returned error: %v", err)
+	}
+	if !graphsEqual(graphBefore, graphAfter) {
+		t.Fatalf("graph changed after missing-target hygiene apply rejection\nbefore: %#v\nafter: %#v", graphBefore, graphAfter)
+	}
+
+	revisionCountAfter := countHygieneRevisionNodes(t, workspace)
+	if revisionCountAfter != revisionCountBefore {
+		t.Fatalf("revision count changed after missing-target hygiene apply rejection\nbefore: %d\nafter: %d", revisionCountBefore, revisionCountAfter)
+	}
+}
+
+func TestHygieneCommandApplyPreservesGraphStateAfterRejection(t *testing.T) {
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, noisyGraphPayload)
+
+	validPlan := runHygieneSuggestCommand(t, repoDir, manager).Result.Plan
+	rejectedPlan := graphhealth.HygienePlan{
+		SnapshotAnchor: validPlan.SnapshotAnchor,
+		Snapshot:       validPlan.Snapshot,
+		Suggestions:    validPlan.Suggestions,
+		Actions: []graphhealth.HygieneAction{
+			{
+				ID:          "bad:action",
+				Type:        "delete_everything",
+				TargetIDs:   []string{"doc:graph-stats-a"},
+				Explanation: "bad action",
+			},
+		},
+		SelectedActionIDs: []string{"bad:action"},
+	}
+
+	store := kuzu.NewStore()
+	graphBefore, err := store.ReadGraph(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("ReadGraph before rejected apply returned error: %v", err)
+	}
+	revisionBefore, err := store.CurrentRevision(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("CurrentRevision before rejected apply returned error: %v", err)
+	}
+	revisionCountBefore := countHygieneRevisionNodes(t, workspace)
+
+	response := runHygieneApplyCommandExpectError(t, repoDir, manager, rejectedPlan)
+	if response.Error.Code != "unsupported_hygiene_action" {
+		t.Fatalf("error.code = %q, want unsupported_hygiene_action", response.Error.Code)
+	}
+
+	graphAfter, err := store.ReadGraph(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("ReadGraph after rejected apply returned error: %v", err)
+	}
+	if !graphsEqual(graphBefore, graphAfter) {
+		t.Fatalf("graph changed after rejected hygiene apply\nbefore: %#v\nafter: %#v", graphBefore, graphAfter)
+	}
+
+	revisionAfter, err := store.CurrentRevision(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("CurrentRevision after rejected apply returned error: %v", err)
+	}
+	if !reflect.DeepEqual(revisionBefore, revisionAfter) {
+		t.Fatalf("revision changed after rejected hygiene apply\nbefore: %#v\nafter: %#v", revisionBefore, revisionAfter)
+	}
+
+	revisionCountAfter := countHygieneRevisionNodes(t, workspace)
+	if revisionCountAfter != revisionCountBefore {
+		t.Fatalf("revision count changed after rejected hygiene apply\nbefore: %d\nafter: %d", revisionCountBefore, revisionCountAfter)
+	}
+}
+
 func TestHygieneCommandApplyOnlySelectedSubset(t *testing.T) {
 	t.Parallel()
 
@@ -1453,6 +1694,30 @@ func runHygieneApplyCommand(t *testing.T, repoDir string, manager *repo.Manager,
 	return decodeHygieneApplyResponse(t, stdout.Bytes())
 }
 
+func runHygieneApplyCommandExpectError(t *testing.T, repoDir string, manager *repo.Manager, plan graphhealth.HygienePlan) hygieneErrorResponse {
+	t.Helper()
+
+	planPath := filepath.Join(t.TempDir(), "hygiene-apply-plan-error.json")
+	payload, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("json.Marshal plan: %v", err)
+	}
+	if err := os.WriteFile(planPath, payload, 0o644); err != nil {
+		t.Fatalf("WriteFile plan: %v", err)
+	}
+
+	cmd := newCommand(repoDir, manager, nil)
+	stdout := &bytes.Buffer{}
+	cmd.SetOut(stdout)
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--apply", "--file", planPath})
+	err = cmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected hygiene apply error, got nil")
+	}
+	return decodeHygieneErrorResponse(t, stdout.Bytes())
+}
+
 func runGraphDiffCommand(t *testing.T, repoDir string, manager *repo.Manager, from, to string) hygieneDiffSuccessResponse {
 	t.Helper()
 
@@ -1491,6 +1756,60 @@ func mutateHygieneGraphState(t *testing.T, repoDir string, queries ...string) {
 		if err != nil {
 			t.Fatalf("execute mutation query %q: %v", query, err)
 		}
+	}
+}
+
+func countHygieneRevisionNodes(t *testing.T, workspace repo.Workspace) int {
+	t.Helper()
+
+	dbPath := filepath.Join(workspace.WorkspacePath, "kuzu", kuzu.StoreFileName)
+	config := kuzudb.DefaultSystemConfig()
+	config.ReadOnly = true
+
+	db, err := kuzudb.OpenDatabase(dbPath, config)
+	if err != nil {
+		t.Fatalf("open read-only kuzu database: %v", err)
+	}
+	defer db.Close()
+
+	conn, err := kuzudb.OpenConnection(db)
+	if err != nil {
+		t.Fatalf("open read-only kuzu connection: %v", err)
+	}
+	defer conn.Close()
+
+	result, err := conn.Query(`MATCH (e:Entity) WHERE e.kind = 'GraphRevision' RETURN COUNT(e);`)
+	if err != nil {
+		t.Fatalf("query graph revision count: %v", err)
+	}
+	defer result.Close()
+
+	if !result.HasNext() {
+		t.Fatal("expected graph revision count row")
+	}
+	tuple, err := result.Next()
+	if err != nil {
+		t.Fatalf("read graph revision count: %v", err)
+	}
+	values, err := tuple.GetAsSlice()
+	if err != nil {
+		t.Fatalf("decode graph revision count: %v", err)
+	}
+
+	switch value := values[0].(type) {
+	case int:
+		return value
+	case int64:
+		return int(value)
+	case int32:
+		return int(value)
+	case uint64:
+		return int(value)
+	case uint32:
+		return int(value)
+	default:
+		t.Fatalf("graph revision count = %#v, want integer", values[0])
+		return 0
 	}
 }
 
