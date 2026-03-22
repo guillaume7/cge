@@ -3,6 +3,7 @@ package hygienecmd
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"os/exec"
@@ -162,6 +163,195 @@ func TestHygieneCommandSuggestReturnsEmptyCandidateSetsForTidyGraph(t *testing.T
 	}
 	if len(response.Result.Plan.Suggestions.Contradictions) != 0 {
 		t.Fatalf("contradictions = %#v, want empty", response.Result.Plan.Suggestions.Contradictions)
+	}
+}
+
+func TestHygieneCommandSuggestReturnsStructuredPlanWithAllCandidateTypes(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, combinedGraphPayload)
+
+	cmd := newCommand(repoDir, manager, nil)
+	stdout := &bytes.Buffer{}
+	cmd.SetOut(stdout)
+	cmd.SetErr(&bytes.Buffer{})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("ExecuteContext returned error: %v", err)
+	}
+
+	response := decodeHygieneSuggestResponse(t, stdout.Bytes())
+	if response.Status != "ok" || response.Command != "hygiene" {
+		t.Fatalf("response = %#v, want hygiene ok", response)
+	}
+	if response.Result.Mode != "suggest" {
+		t.Fatalf("result.mode = %q, want suggest", response.Result.Mode)
+	}
+	assertNonEmptyHexLikeString(t, "result.plan.snapshot_anchor", response.Result.Plan.SnapshotAnchor)
+
+	raw := decodeHygieneJSONMap(t, stdout.Bytes())
+	result := requireJSONObject(t, raw, "result")
+	if got := requireJSONString(t, result, "mode"); got != "suggest" {
+		t.Fatalf("result.mode = %q, want suggest", got)
+	}
+	plan := requireJSONObject(t, result, "plan")
+	assertNonEmptyHexLikeString(t, "result.plan.snapshot_anchor", requireJSONString(t, plan, "snapshot_anchor"))
+
+	suggestions := requireJSONObject(t, plan, "suggestions")
+	duplicateGroups := requireJSONArray(t, suggestions, "duplicate_groups")
+	if len(duplicateGroups) == 0 {
+		t.Error("result.plan.suggestions.duplicate_groups = [], want at least one duplicate suggestion")
+	}
+	orphanNodes := requireJSONArray(t, suggestions, "orphan_nodes")
+	if len(orphanNodes) == 0 {
+		t.Error("result.plan.suggestions.orphan_nodes = [], want at least one orphan suggestion")
+	}
+	contradictions := requireJSONArray(t, suggestions, "contradictions")
+	if len(contradictions) == 0 {
+		t.Error("result.plan.suggestions.contradictions = [], want at least one contradiction suggestion")
+	}
+
+	actions := requireJSONArray(t, plan, "actions")
+	if len(actions) == 0 {
+		t.Error("result.plan.actions = [], want at least one action")
+	}
+
+	expectedTypes := map[string]struct{}{
+		"consolidate_duplicate_nodes": {},
+		"prune_orphan_nodes":          {},
+		"resolve_contradiction":       {},
+	}
+	seenTypes := map[string]struct{}{}
+	for index, actionValue := range actions {
+		action, ok := actionValue.(map[string]any)
+		if !ok {
+			t.Fatalf("result.plan.actions[%d] = %#v, want object", index, actionValue)
+		}
+		actionID := requireJSONString(t, action, "action_id")
+		if actionID == "" {
+			t.Fatalf("result.plan.actions[%d].action_id = %q, want non-empty string", index, actionID)
+		}
+		actionType := requireJSONString(t, action, "type")
+		if _, ok := expectedTypes[actionType]; !ok {
+			t.Fatalf("result.plan.actions[%d].type = %q, want one of %#v", index, actionType, keys(expectedTypes))
+		}
+		seenTypes[actionType] = struct{}{}
+		targetIDs := requireStringArray(t, action, "target_ids")
+		if len(targetIDs) == 0 {
+			t.Fatalf("result.plan.actions[%d].target_ids = %#v, want non-empty string array", index, targetIDs)
+		}
+		if explanation := requireJSONString(t, action, "explanation"); explanation == "" {
+			t.Fatalf("result.plan.actions[%d].explanation = %q, want non-empty string", index, explanation)
+		}
+	}
+	for actionType := range expectedTypes {
+		if _, ok := seenTypes[actionType]; !ok {
+			t.Fatalf("result.plan.actions types = %#v, want to include %q", keys(seenTypes), actionType)
+		}
+	}
+}
+
+func TestHygieneCommandSuggestReturnsEmptyButValidPlanForCleanGraph(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, tidyGraphPayload)
+
+	cmd := newCommand(repoDir, manager, nil)
+	stdout := &bytes.Buffer{}
+	cmd.SetOut(stdout)
+	cmd.SetErr(&bytes.Buffer{})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("ExecuteContext returned error: %v", err)
+	}
+
+	response := decodeHygieneSuggestResponse(t, stdout.Bytes())
+	if response.Status != "ok" || response.Command != "hygiene" {
+		t.Fatalf("response = %#v, want hygiene ok", response)
+	}
+	if response.Result.Mode != "suggest" {
+		t.Fatalf("result.mode = %q, want suggest", response.Result.Mode)
+	}
+	assertNonEmptyHexLikeString(t, "result.plan.snapshot_anchor", response.Result.Plan.SnapshotAnchor)
+	if response.Result.Plan.Suggestions.DuplicateGroups == nil {
+		t.Fatal("result.plan.suggestions.duplicate_groups = nil, want []")
+	}
+	if len(response.Result.Plan.Suggestions.DuplicateGroups) != 0 {
+		t.Fatalf("result.plan.suggestions.duplicate_groups = %#v, want []", response.Result.Plan.Suggestions.DuplicateGroups)
+	}
+	if response.Result.Plan.Suggestions.OrphanNodes == nil {
+		t.Fatal("result.plan.suggestions.orphan_nodes = nil, want []")
+	}
+	if len(response.Result.Plan.Suggestions.OrphanNodes) != 0 {
+		t.Fatalf("result.plan.suggestions.orphan_nodes = %#v, want []", response.Result.Plan.Suggestions.OrphanNodes)
+	}
+	if response.Result.Plan.Suggestions.Contradictions == nil {
+		t.Fatal("result.plan.suggestions.contradictions = nil, want []")
+	}
+	if len(response.Result.Plan.Suggestions.Contradictions) != 0 {
+		t.Fatalf("result.plan.suggestions.contradictions = %#v, want []", response.Result.Plan.Suggestions.Contradictions)
+	}
+	if response.Result.Plan.Actions == nil {
+		t.Fatal("result.plan.actions = nil, want []")
+	}
+	if len(response.Result.Plan.Actions) != 0 {
+		t.Fatalf("result.plan.actions = %#v, want []", response.Result.Plan.Actions)
+	}
+
+	raw := decodeHygieneJSONMap(t, stdout.Bytes())
+	result := requireJSONObject(t, raw, "result")
+	plan := requireJSONObject(t, result, "plan")
+	assertNonEmptyHexLikeString(t, "result.plan.snapshot_anchor", requireJSONString(t, plan, "snapshot_anchor"))
+	suggestions := requireJSONObject(t, plan, "suggestions")
+	if duplicateGroups := requireJSONArray(t, suggestions, "duplicate_groups"); len(duplicateGroups) != 0 {
+		t.Fatalf("raw result.plan.suggestions.duplicate_groups = %#v, want []", duplicateGroups)
+	}
+	if orphanNodes := requireJSONArray(t, suggestions, "orphan_nodes"); len(orphanNodes) != 0 {
+		t.Fatalf("raw result.plan.suggestions.orphan_nodes = %#v, want []", orphanNodes)
+	}
+	if contradictions := requireJSONArray(t, suggestions, "contradictions"); len(contradictions) != 0 {
+		t.Fatalf("raw result.plan.suggestions.contradictions = %#v, want []", contradictions)
+	}
+	if actions := requireJSONArray(t, plan, "actions"); len(actions) != 0 {
+		t.Fatalf("raw result.plan.actions = %#v, want []", actions)
+	}
+}
+
+func TestHygieneCommandSuggestStdoutMatchesFileOutput(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, combinedGraphPayload)
+
+	stdoutCmd := newCommand(repoDir, manager, nil)
+	stdout := &bytes.Buffer{}
+	stdoutCmd.SetOut(stdout)
+	stdoutCmd.SetErr(&bytes.Buffer{})
+	if err := stdoutCmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("stdout ExecuteContext returned error: %v", err)
+	}
+
+	outputPath := filepath.Join(t.TempDir(), "hygiene-plan.json")
+	fileCmd := newCommand(repoDir, manager, nil)
+	fileStdout := &bytes.Buffer{}
+	fileCmd.SetOut(fileStdout)
+	fileCmd.SetErr(&bytes.Buffer{})
+	fileCmd.SetArgs([]string{"--output", outputPath})
+	if err := fileCmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("file ExecuteContext returned error: %v", err)
+	}
+	if fileStdout.Len() != 0 {
+		t.Fatalf("stdout with --output = %q, want empty", fileStdout.String())
+	}
+
+	filePayload, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	if !bytes.Equal(stdout.Bytes(), filePayload) {
+		t.Fatalf("stdout payload != file payload\nstdout: %s\nfile: %s", stdout.Bytes(), filePayload)
 	}
 }
 
@@ -592,11 +782,156 @@ func decodeHygieneErrorResponse(t *testing.T, payload []byte) hygieneErrorRespon
 	return response
 }
 
+func decodeHygieneJSONMap(t *testing.T, payload []byte) map[string]any {
+	t.Helper()
+
+	var decoded map[string]any
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal raw hygiene response: %v\npayload: %s", err, payload)
+	}
+	return decoded
+}
+
 func graphsEqual(left, right kuzu.Graph) bool {
 	leftPayload, leftErr := json.Marshal(left)
 	rightPayload, rightErr := json.Marshal(right)
 	return leftErr == nil && rightErr == nil && bytes.Equal(leftPayload, rightPayload)
 }
+
+func requireJSONObject(t *testing.T, parent map[string]any, key string) map[string]any {
+	t.Helper()
+
+	value, ok := parent[key]
+	if !ok {
+		t.Fatalf("missing key %q in %#v", key, parent)
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		t.Fatalf("%s = %#v, want object", key, value)
+	}
+	return object
+}
+
+func requireJSONArray(t *testing.T, parent map[string]any, key string) []any {
+	t.Helper()
+
+	value, ok := parent[key]
+	if !ok {
+		t.Fatalf("missing key %q in %#v", key, parent)
+	}
+	array, ok := value.([]any)
+	if !ok {
+		t.Fatalf("%s = %#v, want array", key, value)
+	}
+	return array
+}
+
+func requireJSONString(t *testing.T, parent map[string]any, key string) string {
+	t.Helper()
+
+	value, ok := parent[key]
+	if !ok {
+		t.Fatalf("missing key %q in %#v", key, parent)
+	}
+	text, ok := value.(string)
+	if !ok {
+		t.Fatalf("%s = %#v, want string", key, value)
+	}
+	return text
+}
+
+func requireStringArray(t *testing.T, parent map[string]any, key string) []string {
+	t.Helper()
+
+	values := requireJSONArray(t, parent, key)
+	result := make([]string, 0, len(values))
+	for index, value := range values {
+		text, ok := value.(string)
+		if !ok {
+			t.Fatalf("%s[%d] = %#v, want string", key, index, value)
+		}
+		if text == "" {
+			t.Fatalf("%s[%d] = %q, want non-empty string", key, index, text)
+		}
+		result = append(result, text)
+	}
+	return result
+}
+
+func assertNonEmptyHexLikeString(t *testing.T, label string, value string) {
+	t.Helper()
+
+	if value == "" {
+		t.Fatalf("%s = %q, want non-empty string", label, value)
+	}
+	if _, err := hex.DecodeString(value); err != nil {
+		t.Fatalf("%s = %q, want hex-like string: %v", label, value, err)
+	}
+}
+
+func keys[V any](input map[string]V) []string {
+	result := make([]string, 0, len(input))
+	for key := range input {
+		result = append(result, key)
+	}
+	return result
+}
+
+const combinedGraphPayload = `{
+  "schema_version": "v1",
+  "metadata": {
+    "agent_id": "developer",
+    "session_id": "sess-plan-test",
+    "timestamp": "2026-03-22T12:00:00Z",
+    "revision": {
+      "reason": "Seed plan envelope test"
+    }
+  },
+  "nodes": [
+    {
+      "id": "svc:auth",
+      "kind": "Service",
+      "title": "Authentication Service",
+      "summary": "Handles auth"
+    },
+    {
+      "id": "svc:auth-copy",
+      "kind": "Service",
+      "title": "Authentication Service",
+      "summary": "Handles auth"
+    },
+    {
+      "id": "adr:use-jwt",
+      "kind": "ADR",
+      "title": "Authentication strategy",
+      "summary": "Use JWT tokens for all auth"
+    },
+    {
+      "id": "adr:use-sessions",
+      "kind": "ADR",
+      "title": "Authentication strategy",
+      "summary": "Use session cookies for all auth"
+    },
+    {
+      "id": "note:orphan-idea",
+      "kind": "Note",
+      "title": "Random thought",
+      "summary": "Unconnected idea"
+    }
+  ],
+  "edges": [
+    {
+      "from": "svc:auth",
+      "to": "adr:use-jwt",
+      "kind": "DEPENDS_ON"
+    },
+    {
+      "from": "adr:use-jwt",
+      "to": "adr:use-sessions",
+      "kind": "CONTRADICTS"
+    }
+  ]
+}`
 
 const noisyGraphPayload = `{
   "schema_version": "v1",

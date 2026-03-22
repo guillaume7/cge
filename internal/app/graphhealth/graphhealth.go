@@ -88,7 +88,7 @@ type ResolutionPath struct {
 }
 
 type HygieneAction struct {
-	ID              string          `json:"id"`
+	ID              string          `json:"action_id"`
 	Type            string          `json:"type"`
 	TargetIDs       []string        `json:"target_ids"`
 	CanonicalNodeID string          `json:"canonical_node_id,omitempty"`
@@ -121,8 +121,8 @@ func AnalyzeGraph(graph kuzu.Graph) (Analysis, error) {
 	}
 
 	duplicates := detectDuplicateGroups(graph)
-	orphans := detectOrphanNodes(graph)
 	contradictions := detectContradictions(graph)
+	orphans := filterOrphanNodes(detectOrphanNodes(graph), duplicates, contradictions)
 	actions := buildActions(duplicates, orphans, contradictions)
 
 	plan := HygienePlan{
@@ -375,6 +375,28 @@ func detectDuplicateGroups(graph kuzu.Graph) []DuplicateGroup {
 	return duplicates
 }
 
+func filterOrphanNodes(orphans []OrphanNode, duplicates []DuplicateGroup, contradictions []Contradiction) []OrphanNode {
+	excluded := map[string]struct{}{}
+	for _, duplicate := range duplicates {
+		for _, nodeID := range duplicate.NodeIDs {
+			excluded[nodeID] = struct{}{}
+		}
+	}
+	for _, contradiction := range contradictions {
+		for _, nodeID := range contradiction.NodeIDs {
+			excluded[nodeID] = struct{}{}
+		}
+	}
+	filtered := make([]OrphanNode, 0, len(orphans))
+	for _, orphan := range orphans {
+		if _, ok := excluded[orphan.NodeID]; ok {
+			continue
+		}
+		filtered = append(filtered, orphan)
+	}
+	return filtered
+}
+
 func detectOrphanNodes(graph kuzu.Graph) []OrphanNode {
 	degrees := map[string]int{}
 	for _, edge := range graph.Edges {
@@ -549,6 +571,9 @@ func mergeNodes(graph kuzu.Graph, canonicalID string, mergeNodeIDs []string, upd
 		}
 		if _, ok := mergeSet[updated.To]; ok {
 			updated.To = canonicalID
+		}
+		if updated.From == updated.To {
+			continue
 		}
 		if _, ok := nodeByID[updated.From]; !ok {
 			continue
