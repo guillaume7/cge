@@ -1501,6 +1501,69 @@ func TestHygieneCommandApplyOnlySelectedSubset(t *testing.T) {
 	}
 }
 
+func TestHygieneApplyAcceptsActionIDAliasInPlanActions(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, noisyGraphPayload)
+	store := kuzu.NewStore()
+
+	suggestCmd := newCommand(repoDir, manager, nil)
+	suggestStdout := &bytes.Buffer{}
+	suggestCmd.SetOut(suggestStdout)
+	suggestCmd.SetErr(&bytes.Buffer{})
+	if err := suggestCmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("suggest ExecuteContext returned error: %v", err)
+	}
+
+	var envelope map[string]any
+	if err := json.Unmarshal(suggestStdout.Bytes(), &envelope); err != nil {
+		t.Fatalf("json.Unmarshal suggest envelope: %v", err)
+	}
+
+	plan := envelope["result"].(map[string]any)["plan"].(map[string]any)
+	actions := plan["actions"].([]any)
+	selectedActionIDs := []string{}
+	for _, rawAction := range actions {
+		action := rawAction.(map[string]any)
+		action["id"] = action["action_id"]
+		delete(action, "action_id")
+		selectedActionIDs = append(selectedActionIDs, action["id"].(string))
+	}
+	plan["selected_action_ids"] = selectedActionIDs
+
+	planPayload, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatalf("json.Marshal plan: %v", err)
+	}
+	planPath := filepath.Join(t.TempDir(), "alias-plan.json")
+	if err := os.WriteFile(planPath, planPayload, 0o644); err != nil {
+		t.Fatalf("WriteFile plan: %v", err)
+	}
+
+	applyCmd := newCommand(repoDir, manager, nil)
+	applyStdout := &bytes.Buffer{}
+	applyCmd.SetOut(applyStdout)
+	applyCmd.SetErr(&bytes.Buffer{})
+	applyCmd.SetArgs([]string{"--apply", "--file", planPath})
+	if err := applyCmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("apply ExecuteContext returned error: %v", err)
+	}
+
+	applyResponse := decodeHygieneApplyResponse(t, applyStdout.Bytes())
+	if !reflect.DeepEqual(applyResponse.Result.SelectedActionIDs, selectedActionIDs) {
+		t.Fatalf("selected_action_ids = %#v, want %#v", applyResponse.Result.SelectedActionIDs, selectedActionIDs)
+	}
+
+	graphAfter, err := store.ReadGraph(context.Background(), workspace)
+	if err != nil {
+		t.Fatalf("ReadGraph after apply returned error: %v", err)
+	}
+	if len(graphAfter.Nodes) >= 6 {
+		t.Fatalf("graph node count after alias apply = %d, want fewer than 6", len(graphAfter.Nodes))
+	}
+}
+
 func initHygieneWorkspace(t *testing.T) (string, *repo.Manager, repo.Workspace) {
 	t.Helper()
 

@@ -97,6 +97,40 @@ type HygieneAction struct {
 	Metadata        map[string]any  `json:"metadata,omitempty"`
 }
 
+func (a *HygieneAction) UnmarshalJSON(data []byte) error {
+	type hygieneActionDTO struct {
+		ID              string          `json:"id"`
+		ActionID        string          `json:"action_id"`
+		Type            string          `json:"type"`
+		TargetIDs       []string        `json:"target_ids"`
+		CanonicalNodeID string          `json:"canonical_node_id"`
+		Explanation     string          `json:"explanation"`
+		Resolution      *ResolutionPath `json:"resolution"`
+		Metadata        map[string]any  `json:"metadata"`
+	}
+
+	var dto hygieneActionDTO
+	if err := json.Unmarshal(data, &dto); err != nil {
+		return err
+	}
+
+	identifier := strings.TrimSpace(dto.ActionID)
+	if identifier == "" {
+		identifier = strings.TrimSpace(dto.ID)
+	}
+
+	*a = HygieneAction{
+		ID:              identifier,
+		Type:            dto.Type,
+		TargetIDs:       append([]string(nil), dto.TargetIDs...),
+		CanonicalNodeID: dto.CanonicalNodeID,
+		Explanation:     dto.Explanation,
+		Resolution:      dto.Resolution,
+		Metadata:        cloneProps(dto.Metadata),
+	}
+	return nil
+}
+
 type ApplyResult struct {
 	TargetGraph      kuzu.Graph
 	AppliedActions   []HygieneAction
