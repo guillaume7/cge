@@ -26,6 +26,9 @@ Thumbs.db
 .env.local
 *.local
 
+# Local graph workspace
+.graph/
+
 # Logs (session-log is tracked)
 *.log
 

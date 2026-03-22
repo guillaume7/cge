@@ -1,73 +1,205 @@
-# Architecture Overview — Methodology Improvements
+# Architecture Overview — VP1 Cognitive Graph Engine MVP
 
 ## System Context
 
-The "product" is the Copilot Autopilot methodology itself — a set of interconnected markdown files that define agents, skills, prompts, and conventions. The improvement project modifies these files to fix correctness bugs, reduce friction, and improve the SDLC.
+The product is a local, repo-scoped CLI named `graph` that provides a shared
+graph memory for AI agents and sub-agents working inside the same repository.
 
-## Component Map
+Its core purpose is to improve:
 
+- task continuity across sessions and agent handoffs
+- token efficiency by returning compact context instead of large prompt reloads
+- trust in retrieved context through provenance and explanation
+
+The MVP is local/offline, chainable in shell pipelines, and optimized for
+machine use rather than human graph exploration.
+
+## Key Requirements
+
+### Functional
+
+- initialize a repository-scoped graph store
+- accept explicit structured writes from agents
+- store reasoning, planning, project, and codebase entities
+- support shell-native chaining through stdin/stdout
+- retrieve relevant graph data for a task
+- project a compact context slice within a token budget
+- explain why context or query results were returned
+- diff graph states over time
+- allow graph cleanup and rewrite workflows
+
+### Non-Functional
+
+- offline/local operation
+- simple single-machine setup
+- stable machine-readable input/output contract
+- trustworthy provenance on writes and retrieval
+- proportional MVP complexity
+
+## Architectural Style
+
+The MVP uses a **single-process CLI with embedded storage and a small internal
+service layer**.
+
+This is intentionally simple:
+
+- one local binary
+- one graph database as the system of record
+- one local text-relevance index for retrieval ranking
+- no remote services
+- no daemon requirement
+
+## High-Level Design
+
+```text
+stdin / args / files
+        │
+        v
+  +-------------+
+  | graph CLI   |
+  | commands    |
+  +------+------+ 
+         |
+         v
+  +-------------+      +------------------+
+  | payload &   |----->| graph repository |
+  | command     |      | manager          |
+  | validation  |      +--------+---------+
+  +------+------+               |
+         |                      v
+         |              +---------------+
+         |              | Kuzu graph DB |
+         |              +---------------+
+         |
+         v
+  +-------------+      +------------------+
+  | retrieval   |<---->| local text index |
+  | engine      |      | (BM25/FTS)       |
+  +------+------+      +------------------+
+         |
+         +-------------------+
+         |                   |
+         v                   v
+  +-------------+      +-------------+
+  | context     |      | explain/diff|
+  | projector   |      | services    |
+  +------+------+      +-------------+
+         |
+         v
+stdout / files
 ```
-.github/
-├── copilot-instructions.md        ← entry point for all agents (references skills)
-├── agents/
-│   ├── orchestrator.agent.md      ← squad leader, autopilot loop
-│   ├── developer.agent.md         ← implements + tests one story (NEW: replaces implementer + tester)
-│   ├── reviewer.agent.md          ← code review, security audit
-│   ├── troubleshooter.agent.md    ← diagnoses failed stories
-│   ├── architect.agent.md         ← Phase 2: system design
-│   ├── product-owner.agent.md     ← Phase 3: planning
-│   └── archive/                   ← retired agents (implementer, tester, refactorer, documenter)
-├── skills/
-│   ├── the-copilot-build-method/  ← canonical lifecycle, conventions, DoD
-│   ├── backlog-management/        ← canonical backlog schema, state machine
-│   ├── bdd-stories/               ← canonical story format, BDD patterns
-│   ├── code-quality/              ← canonical review checklist, refactoring
-│   └── architecture-decisions/    ← canonical ADR format, tech stack analysis
-├── prompts/
-│   ├── kickstart-vision.prompt.md ← interactive vision brainstorm (keep)
-│   ├── plan-product.prompt.md     ← architect → product-owner pipeline (keep)
-│   └── run-autopilot.prompt.md    ← launch orchestrator (evaluate: keep or drop)
-docs/
-├── plan/
-│   └── backlog.yaml               ← pure YAML, sole source of truth (replaces backlog.md)
-└── themes/                        ← story files have no status field (status lives only in backlog.yaml)
-```
+
+## Request Flows
+
+### `graph init`
+
+1. Detect repo root.
+2. Create graph workspace under the repo.
+3. Initialize Kuzu storage, metadata, and text index.
+4. Record schema version and repository identity.
+
+### `graph write`
+
+1. Read native graph payload from file or stdin.
+2. Validate required metadata and payload schema.
+3. Upsert entities and relationships into Kuzu.
+4. Refresh text index entries for relevant nodes.
+5. Emit machine-readable write summary to stdout.
+
+### `graph query`
+
+1. Parse task text from flags or stdin.
+2. Retrieve graph candidates through structural traversal.
+3. Retrieve text-relevance candidates from the local index.
+4. Rank and merge candidates.
+5. Return a structured result set with provenance.
+
+### `graph context`
+
+1. Run the same hybrid retrieval pipeline as `graph query`.
+2. Expand only the neighborhood needed for continuity.
+3. Project results into a token-budgeted context envelope.
+4. Return compact machine-readable context for downstream agents.
+
+### `graph explain`
+
+1. Reconstruct retrieval decisions.
+2. Show matched terms, graph paths, ranking reasons, and provenance.
+3. Return a structured explanation payload.
+
+### `graph diff`
+
+1. Compare two graph states or revisions.
+2. Report added, updated, removed, and retagged entities/relations.
+3. Return machine-readable change sets.
+
+## Data Ownership
+
+### Graph Repository Manager
+
+Owns:
+
+- repository graph location
+- schema version metadata
+- initialization state
+
+### Graph Store
+
+Owns:
+
+- entities
+- relationships
+- provenance metadata
+- state revision markers
+
+### Text Index
+
+Owns:
+
+- indexed text projections for retrieval
+- searchable aliases, titles, summaries, and content excerpts
+
+### Context Projector
+
+Owns:
+
+- token-budgeted output shaping rules
+- result compaction policies
 
 ## Key Architectural Decisions
 
-### AD1 — Qualified Story IDs
-All story, epic, and theme references use fully-qualified dot-notation: `TH1.E1.US1`. This eliminates ambiguity in `depends-on` references across epics.
+- **ADR-001** — Use Go and Cobra for the CLI implementation
+- **ADR-002** — Use Kuzu as the embedded graph system of record
+- **ADR-003** — Use repo-local graph storage with a deterministic on-disk layout
+- **ADR-004** — Use a flexible entity-centric graph schema with provenance-first
+  metadata
+- **ADR-005** — Define a versioned native JSON payload contract for stdin,
+  stdout, and files
+- **ADR-006** — Use a hybrid retrieval pipeline with graph traversal, local text
+  relevance ranking, context projection, and explanation
 
-### AD2 — Single Source of Truth
-`docs/plan/backlog.yaml` is the only file where status is read or written. Story files contain the story definition (As-a/I-want, ACs, BDD scenarios) but NOT status.
+## Why This Architecture Is Proportional
 
-### AD3 — Developer Agent (Merged)
-The implementer and tester are merged into a single `developer` agent. One agent session = one story's implementation + tests. The reviewer stays independent.
+This architecture is deliberately minimal for MVP:
 
-### AD4 — Thin Agents, Rich Skills
-Agent `.agent.md` files contain only: identity, constraints, output format, and which skills to load. All reusable process knowledge lives in skill files.
+- no networked services
+- no distributed components
+- no background process
+- no separate API layer
+- no human visualization subsystem
 
-### AD5 — DRY Instruction Hierarchy
-```
-copilot-instructions.md (concise entry point, references skills)
-  └── skills/ (canonical source for each topic)
-       └── agents/ (thin, load skills, add constraints + output format)
-```
-No content is duplicated between these layers.
+The only complexity retained is complexity that directly serves the product
+value:
 
-## Change Strategy
+- graph persistence
+- retrieval quality
+- provenance
+- chainability
 
-Modifications are **in-place edits to existing markdown files**. No programming language, no build system, no dependencies. Verification = read the file back and confirm it matches the specification.
+## Open Review Focus
 
-## Dependency Flow Between Epics
+Before planning themes and stories, the most important review points are:
 
-```
-E1 (Core Schema)
- ├──→ E2 (Agent Consolidation)
- │     ├──→ E3 (Deduplication)
- │     ├──→ E4 (SDLC Enhancements)
- │     └──→ E6 (Operational Concerns)
- └──→ E5 (Planning Model)
-```
-
-E1 is foundational — qualified IDs and backlog format changes affect everything downstream.
+1. the choice of a local BM25/FTS retrieval index for MVP semantic recall
+2. the flexible entity-centric schema shape in Kuzu
+3. the proposed native JSON payload contract as the agent/tool protocol

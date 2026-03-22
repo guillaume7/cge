@@ -1,48 +1,18 @@
 # Architecture Decision Records (ADRs)
 
-Significant architecture decisions are documented here using the ADR format.
-
-## Naming Convention
-
-```
-ADR-<NNN>-<slug>.md
-```
-
-Example: `ADR-001-database-choice.md`
-
-## Template
-
-```markdown
-# ADR-<NNN>: <Title>
-
-## Status
-Proposed | Accepted | Deprecated | Superseded by ADR-<NNN>
-
-## Context
-<What is the issue that motivates this decision?>
-
-## Decision
-<What is the change that we're proposing and/or doing?>
-
-## Consequences
-
-### Positive
-- <benefit>
-
-### Negative
-- <trade-off>
-
-### Risks
-- <risk and mitigation>
-
-## Alternatives Considered
-
-### <Alternative 1>
-- Pros: <advantages>
-- Cons: <disadvantages>
-- Rejected because: <reason>
-```
+Significant architecture decisions for the cognitive graph engine MVP are
+documented here.
 
 ## Index
 
-_ADRs will be listed here as they are created by the architect agent._
+- `ADR-001-go-cobra-cli.md`
+- `ADR-002-kuzu-embedded-graph-store.md`
+- `ADR-003-repo-local-graph-workspace.md`
+- `ADR-004-entity-centric-provenance-model.md`
+- `ADR-005-versioned-native-json-payload.md`
+- `ADR-006-hybrid-retrieval-and-projection.md`
+
+## Status Note
+
+All ADRs are currently marked **Proposed** pending user review before the
+planning phase creates themes, epics, and stories.
