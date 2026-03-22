@@ -1,4 +1,4 @@
-# Architecture Overview — VP1 Cognitive Graph Engine MVP
+# Architecture Overview — Cognitive Graph Engine VP1 + VP2
 
 ## System Context
 
@@ -10,9 +10,10 @@ Its core purpose is to improve:
 - task continuity across sessions and agent handoffs
 - token efficiency by returning compact context instead of large prompt reloads
 - trust in retrieved context through provenance and explanation
+- long-term graph maintainability through hygiene and graph-health visibility
 
-The MVP is local/offline, chainable in shell pipelines, and optimized for
-machine use rather than human graph exploration.
+The product remains local/offline, chainable in shell pipelines, and optimized
+for machine use rather than human graph exploration.
 
 ## Key Requirements
 
@@ -27,6 +28,9 @@ machine use rather than human graph exploration.
 - explain why context or query results were returned
 - diff graph states over time
 - allow graph cleanup and rewrite workflows
+- compute graph-health snapshots
+- suggest graph hygiene actions for duplicates, orphans, and contradictions
+- apply explicit hygiene plans and record them as graph revisions
 
 ### Non-Functional
 
@@ -35,17 +39,19 @@ machine use rather than human graph exploration.
 - stable machine-readable input/output contract
 - trustworthy provenance on writes and retrieval
 - proportional MVP complexity
+- safe-by-default graph mutation for hygiene workflows
 
 ## Architectural Style
 
-The MVP uses a **single-process CLI with embedded storage and a small internal
-service layer**.
+The product uses a **single-process CLI with embedded storage and a small
+internal service layer**.
 
 This is intentionally simple:
 
 - one local binary
 - one graph database as the system of record
 - one local text-relevance index for retrieval ranking
+- one in-process graph analysis layer for stats and hygiene
 - no remote services
 - no daemon requirement
 
@@ -76,16 +82,19 @@ stdin / args / files
   | retrieval   |<---->| local text index |
   | engine      |      | (BM25/FTS)       |
   +------+------+      +------------------+
-         |
-         +-------------------+
-         |                   |
-         v                   v
-  +-------------+      +-------------+
-  | context     |      | explain/diff|
-  | projector   |      | services    |
-  +------+------+      +-------------+
-         |
-         v
+          |
+          +-------------------+--------------------+
+          |                   |                    |
+          v                   v                    v
+   +-------------+      +-------------+     +--------------+
+   | context     |      | explain/diff|     | stats &      |
+   | projector   |      | services    |     | hygiene      |
+   +------+------+      +-------------+     | analyzers    |
+          |                                 +------+-------+
+          |                                        |
+          +----------------------------------------+
+          |
+          v
 stdout / files
 ```
 
@@ -133,6 +142,20 @@ stdout / files
 2. Report added, updated, removed, and retagged entities/relations.
 3. Return machine-readable change sets.
 
+### `graph stats`
+
+1. Open the current repo-local graph snapshot.
+2. Compute structural counts and health indicators on demand.
+3. Return machine-readable snapshot metrics for agent decisions.
+
+### `graph hygiene`
+
+1. Analyze the current graph for duplicate-near-identical nodes, orphan nodes,
+   and contradictory facts.
+2. In suggest mode, return structured candidate actions and explanations.
+3. In apply mode, execute only explicit requested actions.
+4. Persist the resulting graph changes through the normal revision flow.
+
 ## Data Ownership
 
 ### Graph Repository Manager
@@ -166,6 +189,14 @@ Owns:
 - token-budgeted output shaping rules
 - result compaction policies
 
+### Stats and Hygiene Analyzers
+
+Own:
+
+- graph-health metrics
+- duplicate/orphan/contradiction detection logic
+- suggested hygiene action plans
+
 ## Key Architectural Decisions
 
 - **ADR-001** — Use Go and Cobra for the CLI implementation
@@ -177,6 +208,9 @@ Owns:
   stdout, and files
 - **ADR-006** — Use a hybrid retrieval pipeline with graph traversal, local text
   relevance ranking, context projection, and explanation
+- **ADR-007** — Use a suggest-first graph hygiene workflow with explicit apply
+- **ADR-008** — Compute graph stats and health indicators on demand from the
+  current graph snapshot
 
 ## Why This Architecture Is Proportional
 
@@ -187,6 +221,7 @@ This architecture is deliberately minimal for MVP:
 - no background process
 - no separate API layer
 - no human visualization subsystem
+- no dedicated metrics backend
 
 The only complexity retained is complexity that directly serves the product
 value:
@@ -195,11 +230,13 @@ value:
 - retrieval quality
 - provenance
 - chainability
+- graph maintainability
 
 ## Open Review Focus
 
 Before planning themes and stories, the most important review points are:
 
-1. the choice of a local BM25/FTS retrieval index for MVP semantic recall
-2. the flexible entity-centric schema shape in Kuzu
-3. the proposed native JSON payload contract as the agent/tool protocol
+1. the boundary between suggest-only hygiene analysis and explicit apply flows
+2. the on-demand computation model for graph stats and health indicators
+3. the reuse of the existing entity-centric graph model for contradiction and
+   consolidation workflows

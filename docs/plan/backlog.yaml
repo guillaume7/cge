@@ -1,6 +1,6 @@
 backlog:
   project: cognitive-graph-engine
-  last-updated: '2026-03-21T22:38:09Z'
+  last-updated: '2026-03-22T11:29:01Z'
   themes:
   - id: TH1
     name: Cognitive Graph Engine MVP
@@ -106,3 +106,75 @@ backlog:
         - TH1.E3.US3
         - TH1.E4.US1
         - TH1.E4.US2
+  - id: TH2
+    name: Graph Hygiene and Stats
+    status: done
+    locked: false
+    vision-ref: docs/vision_of_product/VP2-graph-hygiene-and-stats/
+    depends-on:
+    - TH1
+    epics:
+    - id: TH2.E1
+      name: Graph Stats Snapshot
+      status: done
+      depends-on: []
+      stories:
+      - id: TH2.E1.US1
+        title: Add a graph stats command and snapshot counts
+        status: done
+        file: docs/themes/TH2-graph-hygiene-and-stats/epics/E1-graph-stats-snapshot/stories/US1-graph-stats-command-and-counts.md
+        depends-on: []
+      - id: TH2.E1.US2
+        title: Compute cognitive health indicators from the current graph snapshot
+        status: done
+        file: docs/themes/TH2-graph-hygiene-and-stats/epics/E1-graph-stats-snapshot/stories/US2-cognitive-health-indicators.md
+        depends-on:
+        - TH2.E1.US1
+    - id: TH2.E2
+      name: Hygiene Suggestions
+      status: done
+      depends-on:
+      - TH2.E1
+      stories:
+      - id: TH2.E2.US1
+        title: Detect orphan and duplicate-near-identical hygiene candidates
+        status: done
+        file: docs/themes/TH2-graph-hygiene-and-stats/epics/E2-hygiene-suggestions/stories/US1-orphan-and-duplicate-candidates.md
+        depends-on:
+        - TH2.E1.US1
+      - id: TH2.E2.US2
+        title: Detect contradictory facts and propose resolution candidates
+        status: done
+        file: docs/themes/TH2-graph-hygiene-and-stats/epics/E2-hygiene-suggestions/stories/US2-contradiction-candidates.md
+        depends-on:
+        - TH2.E2.US1
+      - id: TH2.E2.US3
+        title: Return machine-readable hygiene suggestion plans
+        status: done
+        file: docs/themes/TH2-graph-hygiene-and-stats/epics/E2-hygiene-suggestions/stories/US3-machine-readable-hygiene-plan.md
+        depends-on:
+        - TH2.E2.US2
+    - id: TH2.E3
+      name: Hygiene Apply and Revision Safety
+      status: done
+      depends-on:
+      - TH2.E2
+      stories:
+      - id: TH2.E3.US1
+        title: Apply explicit hygiene plans and return revision anchors
+        status: done
+        file: docs/themes/TH2-graph-hygiene-and-stats/epics/E3-hygiene-apply-revision-safety/stories/US1-apply-hygiene-plans.md
+        depends-on:
+        - TH2.E2.US3
+      - id: TH2.E3.US2
+        title: Keep hygiene changes inspectable through revision diff
+        status: done
+        file: docs/themes/TH2-graph-hygiene-and-stats/epics/E3-hygiene-apply-revision-safety/stories/US2-hygiene-diff-compatibility.md
+        depends-on:
+        - TH2.E3.US1
+      - id: TH2.E3.US3
+        title: Reject stale or unsafe hygiene plans without mutating the graph
+        status: done
+        file: docs/themes/TH2-graph-hygiene-and-stats/epics/E3-hygiene-apply-revision-safety/stories/US3-reject-stale-or-unsafe-plans.md
+        depends-on:
+        - TH2.E3.US1

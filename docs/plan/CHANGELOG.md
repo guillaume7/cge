@@ -143,3 +143,63 @@
 - standardized the machine-readable JSON contract across write, query, context, explain, and diff
 - implemented revision-anchor graph diffs with added, updated, removed, and retagged entity/relationship reporting
 - verified end-to-end stdin/stdout chaining for payload writes, task queries, context consumption, and structured error flows
+
+## TH2.E1 — Graph Stats Snapshot
+
+### Stories Completed
+- TH2.E1.US1: Add a graph stats command and snapshot counts
+- TH2.E1.US2: Compute cognitive health indicators from the current graph snapshot
+
+### Key Changes
+- Added `graph stats` command returning node count, relationship count, and cognitive health indicators
+- Health indicators: duplication_rate, orphan_rate, contradictory_facts, density_score, clustering_score
+- All metrics computed on-demand from current graph snapshot (no persisted metrics backend)
+- Read-only operation — never mutates graph content or revision state
+- Machine-readable JSON envelope consistent with existing command contract
+
+### Files Modified
+- internal/app/statscmd/command.go, command_test.go (new)
+- internal/infra/kuzu/stats.go (new)
+- internal/app/graphhealth/graphhealth.go (new — shared analysis engine)
+- internal/app/graphcmd/root.go (stats command registration)
+
+## TH2.E2 — Hygiene Suggestions
+
+### Stories Completed
+- TH2.E2.US1: Detect orphan and duplicate-near-identical hygiene candidates
+- TH2.E2.US2: Detect contradictory facts and propose resolution candidates
+- TH2.E2.US3: Return machine-readable hygiene suggestion plans
+
+### Key Changes
+- Added `graph hygiene` command in suggest-first default mode
+- Detects orphan nodes (zero relationships), near-identical duplicates (same kind + normalized title/body fingerprint), and contradictory facts (same subject, conflicting values)
+- Each candidate includes machine-readable reason and proposed resolution
+- Structured plan envelope with snapshot_anchor, suggestions, and typed action list
+- Each action includes action_id, type, target_ids, and explanation
+- Suggest mode never mutates graph content or revision state
+
+### Files Modified
+- internal/app/hygienecmd/command.go, command_test.go (new)
+- internal/app/graphhealth/graphhealth.go (detection + plan logic)
+- internal/app/graphcmd/root.go (hygiene command registration)
+
+## TH2.E3 — Hygiene Apply and Revision Safety
+
+### Stories Completed
+- TH2.E3.US1: Apply explicit hygiene plans and return revision anchors
+- TH2.E3.US2: Keep hygiene changes inspectable through revision diff
+- TH2.E3.US3: Reject stale or unsafe hygiene plans without mutating the graph
+
+### Key Changes
+- Added `graph hygiene --apply --file <plan>` mode for explicit mutation
+- Apply executes only selected action IDs from the supplied plan
+- Returns revision anchor for before/after diff inspection
+- Applied changes are diffable via existing `graph diff` command
+- Stale plans (snapshot_anchor mismatch) rejected with structured error
+- Unsupported action types and missing target entities rejected with structured error
+- All rejected plans leave graph content and revision state completely unchanged
+
+### Files Modified
+- internal/app/hygienecmd/command.go, command_test.go
+- internal/app/graphhealth/graphhealth.go (apply + validation logic)
+- internal/infra/kuzu/sync.go (new — ReplaceGraph, CurrentRevision)

@@ -1,4 +1,4 @@
-# Tech Stack — VP1 Cognitive Graph Engine MVP
+# Tech Stack — Cognitive Graph Engine VP1 + VP2
 
 ## Overview
 
@@ -17,11 +17,13 @@ user review.
 
 | Concern | Technology | Rationale | ADR |
 |---|---|---|---|
-| CLI language | Go 1.22+ | Simple static binaries, strong stdlib, good CLI ergonomics | ADR-001 |
+| CLI language | Go 1.22+ | Simple binaries, strong stdlib, good CLI ergonomics | ADR-001 |
 | CLI framework | Cobra | Proven command/subcommand model, help generation, good fit for `graph` UX | ADR-001 |
-| Config / flags | Cobra + stdlib | Avoid extra config abstraction for MVP | ADR-001 |
+| Config / flags | Cobra + stdlib | Avoid extra config abstraction for the current product stage | ADR-001 |
 | Graph database | Kuzu embedded DB | Native graph storage, local embedding, no service deployment | ADR-002 |
 | Text relevance index | Bleve | Embedded full-text ranking, offline, easy Go integration | ADR-006 |
+| Hygiene analysis | In-process Go analyzers over graph snapshots | Reuse current store and avoid adding services or a second data platform | ADR-007 |
+| Stats computation | On-demand snapshot metrics in-process | Avoid a metrics backend and keep stats cheap, local, and explicit | ADR-008 |
 | Payload format | Versioned JSON | Native machine-readable protocol for stdin/stdout/files | ADR-005 |
 | Testing | Go `testing` package | Keep setup simple and standard | ADR-001 |
 | Build / dependency management | Go modules | Reproducible builds with `go.mod` and `go.sum` | ADR-001 |
@@ -86,6 +88,34 @@ Trade-off:
 - does not provide dense vector semantics by itself
 - requires a second local persistence mechanism alongside the graph DB
 
+### In-process hygiene analyzers
+
+Why they fit:
+
+- reuse the current Kuzu-backed graph snapshot instead of introducing another
+  persistent subsystem
+- keep duplicate/orphan/contradiction analysis local and explainable
+- make suggest-first hygiene cheap to invoke from the CLI
+
+Trade-off:
+
+- heuristic analysis quality will depend on careful tuning
+- larger graphs may require optimization work inside the process
+
+### On-demand stats computation
+
+Why it fits:
+
+- VP2 requires snapshot health metrics, not trend infrastructure
+- avoids shipping a metrics store, scheduler, or daemon
+- aligns with explicit agent workflows like `graph stats` before retrieval-heavy
+  work
+
+Trade-off:
+
+- expensive metrics must be computed efficiently enough for interactive CLI use
+- no historical trends are available unless a later phase adds them
+
 ## Rejected Simpler/Heavier Options
 
 ### Python
@@ -112,3 +142,15 @@ Trade-off:
 - Stronger semantic retrieval potential
 - Higher complexity in binaries, model packaging, and inference runtime
 - Rejected for MVP in favor of local BM25/FTS plus graph-aware ranking
+
+### Separate metrics backend or observability store in VP2
+- Pros: could support trend analysis and larger-scale dashboards
+- Cons: adds deployment, persistence, and synchronization complexity
+- Rejected because: VP2 only requires snapshot stats and must remain a simple
+  local CLI
+
+### Background autonomous hygiene daemon in VP2
+- Pros: could keep the graph continuously tidy
+- Cons: violates the explicit/safe-by-default cleanup principle and adds runtime
+  complexity
+- Rejected because: VP2 should suggest first and apply only on explicit request
