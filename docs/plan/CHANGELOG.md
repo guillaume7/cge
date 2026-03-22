@@ -119,3 +119,27 @@
 - .github/skills/architecture-decisions/SKILL.md
 - .github/skills/backlog-management/SKILL.md
 - .github/agents/orchestrator.agent.md
+
+## TH1.E1 — Workspace and CLI Foundation
+
+- bootstrapped the Go-based `graph` CLI and repo-local `.graph/` workspace
+- added the chainable MVP command surface with repo discovery and stdin support
+- defined the versioned native payload envelope and structured validation errors
+
+## TH1.E2 — Graph Persistence and Provenance
+
+- replaced stub persistence with real Kuzu-backed entity and relationship storage
+- enforced provenance for reasoning units and agent sessions within the entity-centric model
+- added rewrite-safe revision anchors for future graph diff support
+
+## TH1.E3 — Hybrid Retrieval and Context
+
+- implemented offline hybrid retrieval by combining graph structure with a rebuildable local text-relevance index
+- added compact token-budgeted context projection with prioritization that preserves critical relationships and provenance
+- introduced structured `graph explain` output with ranking reasons, graph paths, and provenance traces for trust/debugging
+
+## TH1.E4 — Diff, Trust, and Agent Interoperability
+
+- standardized the machine-readable JSON contract across write, query, context, explain, and diff
+- implemented revision-anchor graph diffs with added, updated, removed, and retagged entity/relationship reporting
+- verified end-to-end stdin/stdout chaining for payload writes, task queries, context consumption, and structured error flows

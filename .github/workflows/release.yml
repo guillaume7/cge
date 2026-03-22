@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify build inputs
+        run: |
+          set -euo pipefail
+          go test ./...
+
+      - name: Build release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          binary_dir="dist/cge_${GITHUB_REF_NAME}_linux_amd64"
+          mkdir -p "$binary_dir"
+          go build -trimpath -o "$binary_dir/graph" ./cmd/graph
+          cp README.md "$binary_dir/README.md"
+          tar -C dist -czf "dist/cge_${GITHUB_REF_NAME}_linux_amd64.tar.gz" "$(basename "$binary_dir")"
+          sha256sum "dist/cge_${GITHUB_REF_NAME}_linux_amd64.tar.gz" > "dist/cge_${GITHUB_REF_NAME}_linux_amd64.tar.gz.sha256"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --notes "Initial VP1 MVP release of the Cognitive Graph Engine CLI."
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber

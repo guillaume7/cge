@@ -8,6 +8,7 @@ __pycache__/
 # Build outputs
 dist/
 build/
+graph
 *.egg-info/
 target/
 
@@ -25,6 +26,9 @@ Thumbs.db
 .env
 .env.local
 *.local
+
+# Local graph workspace
+.graph/
 
 # Logs (session-log is tracked)
 *.log
