@@ -235,6 +235,284 @@ func TestHygieneCommandOutputFlagWritesValidJSONToFile(t *testing.T) {
 	}
 }
 
+func TestHygieneCommandSuggestReturnsContradictionCandidatesWithProposedResolutions(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	const contradictionGraphPayload = `{
+	  "schema_version": "v1",
+	  "metadata": {
+	    "agent_id": "developer",
+	    "session_id": "sess-contradiction",
+	    "timestamp": "2026-03-22T10:00:00Z",
+	    "revision": {
+	      "reason": "Seed contradiction test"
+	    }
+	  },
+	  "nodes": [
+	    {
+	      "id": "adr:db-postgres",
+	      "kind": "ADR",
+	      "title": "Database choice for persistence",
+	      "summary": "PostgreSQL selected as primary database",
+	      "properties": {
+	        "value": "postgresql"
+	      }
+	    },
+	    {
+	      "id": "adr:db-mysql",
+	      "kind": "ADR",
+	      "title": "Database choice for persistence",
+	      "summary": "MySQL selected as primary database",
+	      "properties": {
+	        "value": "mysql"
+	      }
+	    },
+	    {
+	      "id": "service:api",
+	      "kind": "Service",
+	      "title": "API Service",
+	      "summary": "REST API service"
+	    }
+	  ],
+	  "edges": [
+	    {
+	      "from": "adr:db-postgres",
+	      "to": "adr:db-mysql",
+	      "kind": "CONTRADICTS"
+	    },
+	    {
+	      "from": "service:api",
+	      "to": "adr:db-postgres",
+	      "kind": "DEPENDS_ON"
+	    }
+	  ]
+	}`
+	writeHygieneRevision(t, workspace, contradictionGraphPayload)
+
+	cmd := newCommand(repoDir, manager, nil)
+	stdout := &bytes.Buffer{}
+	cmd.SetOut(stdout)
+	cmd.SetErr(&bytes.Buffer{})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("ExecuteContext returned error: %v", err)
+	}
+
+	response := decodeHygieneSuggestResponse(t, stdout.Bytes())
+	if response.Status != "ok" || response.Command != "hygiene" {
+		t.Fatalf("response = %#v, want hygiene ok", response)
+	}
+	if response.Result.Mode != "suggest" {
+		t.Fatalf("mode = %q, want suggest", response.Result.Mode)
+	}
+
+	contradictions := response.Result.Plan.Suggestions.Contradictions
+	if contradictions == nil {
+		t.Fatal("expected contradictions suggestions slice, got nil")
+	}
+	if len(contradictions) == 0 {
+		t.Fatal("expected at least one contradiction suggestion")
+	}
+
+	foundExpectedNodes := false
+	for _, contradiction := range contradictions {
+		if contradiction.ActionID == "" || contradiction.Reason == "" {
+			t.Fatalf("contradiction suggestion missing machine-readable fields: %#v", contradiction)
+		}
+		if len(contradiction.NodeIDs) < 2 {
+			t.Fatalf("contradiction node_ids = %#v, want at least 2 nodes", contradiction.NodeIDs)
+		}
+		if contradiction.CanonicalNodeID == "" {
+			t.Fatalf("expected canonical node id in contradiction suggestion: %#v", contradiction)
+		}
+		if len(contradiction.Conflicts) < 2 {
+			t.Fatalf("conflicts = %#v, want at least 2 conflicting facts", contradiction.Conflicts)
+		}
+		if contradiction.Resolution.Strategy == "" || contradiction.Resolution.CanonicalNodeID == "" || contradiction.Resolution.Explanation == "" {
+			t.Fatalf("resolution = %#v, want a non-empty structured resolution path", contradiction.Resolution)
+		}
+
+		factsByNode := map[string]string{}
+		for _, fact := range contradiction.Conflicts {
+			if fact.NodeID == "" || fact.Value == "" {
+				t.Fatalf("conflict fact missing node_id/value: %#v", fact)
+			}
+			factsByNode[fact.NodeID] = fact.Value
+		}
+		if factsByNode["adr:db-postgres"] != "" && factsByNode["adr:db-mysql"] != "" {
+			foundExpectedNodes = true
+		}
+	}
+	if !foundExpectedNodes {
+		t.Fatalf("expected contradiction involving adr:db-postgres and adr:db-mysql, got %#v", contradictions)
+	}
+
+	asString := func(value any) string {
+		stringValue, _ := value.(string)
+		return stringValue
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal raw hygiene response: %v", err)
+	}
+	result, ok := payload["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("raw result = %#v, want object", payload["result"])
+	}
+	plan, ok := result["plan"].(map[string]any)
+	if !ok {
+		t.Fatalf("raw plan = %#v, want object", result["plan"])
+	}
+	suggestions, ok := plan["suggestions"].(map[string]any)
+	if !ok {
+		t.Fatalf("raw suggestions = %#v, want object", plan["suggestions"])
+	}
+	rawContradictions, ok := suggestions["contradictions"].([]any)
+	if !ok {
+		t.Fatalf("raw contradictions = %#v, want array", suggestions["contradictions"])
+	}
+	if len(rawContradictions) == 0 {
+		t.Fatal("expected raw contradictions array to contain at least one entry")
+	}
+	for _, item := range rawContradictions {
+		contradiction, ok := item.(map[string]any)
+		if !ok {
+			t.Fatalf("raw contradiction = %#v, want object", item)
+		}
+		if asString(contradiction["action_id"]) == "" {
+			t.Fatalf("raw contradiction missing action_id: %#v", contradiction)
+		}
+		if asString(contradiction["reason"]) == "" {
+			t.Fatalf("raw contradiction missing reason: %#v", contradiction)
+		}
+
+		factsValue, ok := contradiction["facts"]
+		if !ok {
+			factsValue, ok = contradiction["conflicts"]
+		}
+		if !ok {
+			t.Fatalf("raw contradiction missing facts/conflicts array: %#v", contradiction)
+		}
+		facts, ok := factsValue.([]any)
+		if !ok || len(facts) == 0 {
+			t.Fatalf("raw facts = %#v, want non-empty array", factsValue)
+		}
+		for _, factValue := range facts {
+			fact, ok := factValue.(map[string]any)
+			if !ok {
+				t.Fatalf("raw fact = %#v, want object", factValue)
+			}
+			if asString(fact["node_id"]) == "" || asString(fact["value"]) == "" {
+				t.Fatalf("raw fact missing node_id/value: %#v", fact)
+			}
+		}
+
+		resolutionValue, ok := contradiction["proposed_resolution"]
+		if !ok {
+			resolutionValue, ok = contradiction["resolution"]
+		}
+		if !ok {
+			t.Fatalf("raw contradiction missing proposed_resolution/resolution object: %#v", contradiction)
+		}
+		resolution, ok := resolutionValue.(map[string]any)
+		if !ok || len(resolution) == 0 {
+			t.Fatalf("raw resolution = %#v, want non-empty object", resolutionValue)
+		}
+	}
+}
+
+func TestHygieneCommandSuggestReturnsNoContradictionsForCoherentGraph(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager, workspace := initHygieneWorkspace(t)
+	writeHygieneRevision(t, workspace, tidyGraphPayload)
+
+	cmd := newCommand(repoDir, manager, nil)
+	stdout := &bytes.Buffer{}
+	cmd.SetOut(stdout)
+	cmd.SetErr(&bytes.Buffer{})
+
+	if err := cmd.ExecuteContext(context.Background()); err != nil {
+		t.Fatalf("ExecuteContext returned error: %v", err)
+	}
+
+	response := decodeHygieneSuggestResponse(t, stdout.Bytes())
+	if response.Status != "ok" || response.Command != "hygiene" {
+		t.Fatalf("response = %#v, want hygiene ok", response)
+	}
+	if response.Result.Mode != "suggest" {
+		t.Fatalf("mode = %q, want suggest", response.Result.Mode)
+	}
+	if response.Result.Plan.Suggestions.Contradictions == nil {
+		t.Fatal("expected contradictions to be an empty array, got nil")
+	}
+	if len(response.Result.Plan.Suggestions.Contradictions) != 0 {
+		t.Fatalf("contradictions = %#v, want empty", response.Result.Plan.Suggestions.Contradictions)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(stdout.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal raw hygiene response: %v", err)
+	}
+	result, ok := payload["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("raw result = %#v, want object", payload["result"])
+	}
+	plan, ok := result["plan"].(map[string]any)
+	if !ok {
+		t.Fatalf("raw plan = %#v, want object", result["plan"])
+	}
+	suggestions, ok := plan["suggestions"].(map[string]any)
+	if !ok {
+		t.Fatalf("raw suggestions = %#v, want object", plan["suggestions"])
+	}
+	rawContradictions, ok := suggestions["contradictions"].([]any)
+	if !ok {
+		t.Fatalf("raw contradictions = %#v, want empty array", suggestions["contradictions"])
+	}
+	if len(rawContradictions) != 0 {
+		t.Fatalf("raw contradictions = %#v, want empty array", rawContradictions)
+	}
+}
+
+func TestHygieneCommandSuggestReturnsStructuredErrorWhenContradictionAnalysisFails(t *testing.T) {
+	t.Parallel()
+
+	repoDir := t.TempDir()
+	cmd := exec.Command("git", "init")
+	cmd.Dir = repoDir
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init failed: %v\n%s", err, output)
+	}
+
+	manager := repo.NewManager(repo.NewGitRepositoryLocator())
+	hygieneCmd := newCommand(repoDir, manager, nil)
+	stdout := &bytes.Buffer{}
+	hygieneCmd.SetOut(stdout)
+	hygieneCmd.SetErr(&bytes.Buffer{})
+
+	err := hygieneCmd.ExecuteContext(context.Background())
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	response := decodeHygieneErrorResponse(t, stdout.Bytes())
+	if response.Status != "error" || response.Command != "hygiene" {
+		t.Fatalf("response = %#v, want hygiene error", response)
+	}
+	if response.Error.Category != "operational_error" {
+		t.Fatalf("error category = %q, want operational_error", response.Error.Category)
+	}
+	if response.Error.Code != "workspace_not_initialized" {
+		t.Fatalf("error code = %q, want workspace_not_initialized", response.Error.Code)
+	}
+	if response.Error.Message == "" {
+		t.Fatal("expected structured error message")
+	}
+}
+
 func initHygieneWorkspace(t *testing.T) (string, *repo.Manager, repo.Workspace) {
 	t.Helper()
 
