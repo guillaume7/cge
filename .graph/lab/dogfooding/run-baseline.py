@@ -7,7 +7,7 @@ from pathlib import Path
 
 SCRIPT_PATH = Path(__file__).resolve()
 REPO_ROOT = SCRIPT_PATH.parents[3]
-BASELINE_PATH = SCRIPT_PATH.with_name('baseline-v1.json')
+BASELINE_PATH = REPO_ROOT / 'internal' / 'testdata' / 'lab' / 'dogfooding' / 'baseline-v1.json'
 GRAPH_BIN = os.environ.get('GRAPH_BIN', 'graph')
 GENERATED_DIR = SCRIPT_PATH.parent / 'generated'
 

@@ -86,7 +86,7 @@
       ".graph/lab/evaluations/repo-dogfood-report-with-graph.json",
       ".graph/lab/evaluations/repo-dogfood-report-without-graph.json"
     ],
-    "report_path": ".graph/lab/reports/report-20260326t232306z.json"
+    "report_path": ".graph/lab/reports/repo-dogfooding-baseline-v1.json"
   },
   "limitations": [
     "This harness is intentionally tiny: two tasks, one model, one topology, and one scored pair per task.",

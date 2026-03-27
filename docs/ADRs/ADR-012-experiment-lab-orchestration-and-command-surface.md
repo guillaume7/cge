@@ -1,7 +1,7 @@
 # ADR-012: Local experiment-lab orchestration and `graph lab` command surface
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

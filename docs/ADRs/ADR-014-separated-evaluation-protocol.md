@@ -1,7 +1,7 @@
 # ADR-014: Separated evaluation protocol for quality scoring
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

@@ -51,7 +51,7 @@ func TestRepoDogfoodingHarnessIncludesTwoRepoTasksAndArtifactRefs(t *testing.T) 
 	t.Parallel()
 
 	repoRoot := repoDogfoodingRepoRoot(t)
-	baseline := readJSON[repoDogfoodingBaseline](t, filepath.Join(repoRoot, ".graph", "lab", "dogfooding", "baseline-v1.json"))
+	baseline := readJSON[repoDogfoodingBaseline](t, filepath.Join(repoRoot, "internal", "testdata", "lab", "dogfooding", "baseline-v1.json"))
 	suite := readJSON[repoDogfoodingSuite](t, filepath.Join(repoRoot, baseline.SuiteManifestPath))
 	conditions := readJSON[repoDogfoodingConditions](t, filepath.Join(repoRoot, baseline.ConditionsPath))
 
@@ -94,7 +94,7 @@ func TestRepoDogfoodingDocumentationExplainsLifecycleAndLimitations(t *testing.T
 	t.Parallel()
 
 	repoRoot := repoDogfoodingRepoRoot(t)
-	baseline := readJSON[repoDogfoodingBaseline](t, filepath.Join(repoRoot, ".graph", "lab", "dogfooding", "baseline-v1.json"))
+	baseline := readJSON[repoDogfoodingBaseline](t, filepath.Join(repoRoot, "internal", "testdata", "lab", "dogfooding", "baseline-v1.json"))
 	payload, err := os.ReadFile(filepath.Join(repoRoot, baseline.DocumentationRef))
 	if err != nil {
 		t.Fatalf("os.ReadFile(%s): %v", baseline.DocumentationRef, err)
@@ -121,7 +121,7 @@ func TestRepoDogfoodingBaselineReportSurfacesPairedEvidenceAndExplicitLimitation
 	t.Parallel()
 
 	repoRoot := repoDogfoodingRepoRoot(t)
-	baseline := readJSON[repoDogfoodingBaseline](t, filepath.Join(repoRoot, ".graph", "lab", "dogfooding", "baseline-v1.json"))
+	baseline := readJSON[repoDogfoodingBaseline](t, filepath.Join(repoRoot, "internal", "testdata", "lab", "dogfooding", "baseline-v1.json"))
 	report := readJSON[repoDogfoodingReport](t, filepath.Join(repoRoot, baseline.BaselineArtifacts.ReportPath))
 
 	if len(report.PairedComparisons) < 2 {

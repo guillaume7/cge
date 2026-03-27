@@ -1,7 +1,7 @@
 # ADR-010: Use composable workflow snippets and transparent wrapper/hooks
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

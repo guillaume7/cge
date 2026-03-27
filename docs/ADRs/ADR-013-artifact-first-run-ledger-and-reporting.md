@@ -1,7 +1,7 @@
 # ADR-013: Artifact-first run ledger and scientific reporting model
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

@@ -1,7 +1,7 @@
 # ADR-009: Add a thin delegated-workflow orchestration layer over existing graph primitives
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

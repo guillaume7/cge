@@ -20,8 +20,10 @@ documented here.
 - `ADR-013-artifact-first-run-ledger-and-reporting.md`
 - `ADR-014-separated-evaluation-protocol.md`
 - `ADR-015-measured-execution-telemetry.md`
+- `ADR-016-precision-governed-advisory-kickoff.md`
 
 ## Status Note
 
-All ADRs are currently marked **Proposed** pending user review before the
-planning phase creates themes, epics, and stories.
+ADRs for themes shipped in v0.3.0 (ADR-009 through ADR-016) are marked
+**Accepted**. Earlier ADRs (ADR-001 through ADR-008) remain **Proposed**
+pending formal review.

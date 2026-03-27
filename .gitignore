@@ -35,7 +35,6 @@ Thumbs.db
 !.graph/lab/conditions.json
 !.graph/lab/dogfooding/
 .graph/lab/dogfooding/*
-!.graph/lab/dogfooding/baseline-v1.json
 !.graph/lab/dogfooding/run-baseline.py
 !.graph/lab/runs/
 .graph/lab/runs/*
@@ -52,7 +51,7 @@ Thumbs.db
 !.graph/lab/evaluations/repo-dogfood-report-without-graph.json
 !.graph/lab/reports/
 .graph/lab/reports/*
-!.graph/lab/reports/report-20260326t232306z.json
+!.graph/lab/reports/repo-dogfooding-baseline-v1.json
 
 # Logs (session-log is tracked)
 *.log

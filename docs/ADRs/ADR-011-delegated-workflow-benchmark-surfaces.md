@@ -1,7 +1,7 @@
 # ADR-011: Benchmark delegated workflow through a local harness and CLI report surface
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 
