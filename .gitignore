@@ -28,7 +28,31 @@ Thumbs.db
 *.local
 
 # Local graph workspace
-.graph/
+.graph/*
+!.graph/lab/
+.graph/lab/*
+!.graph/lab/suite.json
+!.graph/lab/conditions.json
+!.graph/lab/dogfooding/
+.graph/lab/dogfooding/*
+!.graph/lab/dogfooding/baseline-v1.json
+!.graph/lab/dogfooding/run-baseline.py
+!.graph/lab/runs/
+.graph/lab/runs/*
+!.graph/lab/runs/batches/
+.graph/lab/runs/batches/*
+!.graph/lab/runs/batches/repo-dogfooding-baseline-v1/
+.graph/lab/runs/batches/repo-dogfooding-baseline-v1/*
+!.graph/lab/runs/batches/repo-dogfooding-baseline-v1/plan.json
+!.graph/lab/evaluations/
+.graph/lab/evaluations/*
+!.graph/lab/evaluations/repo-dogfood-workflow-with-graph.json
+!.graph/lab/evaluations/repo-dogfood-workflow-without-graph.json
+!.graph/lab/evaluations/repo-dogfood-report-with-graph.json
+!.graph/lab/evaluations/repo-dogfood-report-without-graph.json
+!.graph/lab/reports/
+.graph/lab/reports/*
+!.graph/lab/reports/report-20260326t232306z.json
 
 # Logs (session-log is tracked)
 *.log

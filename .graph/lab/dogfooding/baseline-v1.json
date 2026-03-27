@@ -1,0 +1,96 @@
+{
+  "schema_version": "v1",
+  "experiment_id": "repo-dogfooding-baseline-v1",
+  "description": "Small repo-local dogfooding harness for delegated-workflow tasks in this repository.",
+  "documentation_ref": "docs/themes/TH4-experimental-evidence-lab/epics/E3-evaluation-reporting-and-dogfooding/repo-dogfooding-example.md",
+  "suite_manifest_path": ".graph/lab/suite.json",
+  "conditions_manifest_path": ".graph/lab/conditions.json",
+  "evaluation_mode": "illustrative_baseline_scores",
+  "run_plan": {
+    "model": "claude-sonnet",
+    "session_topology": "delegated-parallel",
+    "seed": 42,
+    "randomized": false,
+    "task_ids": [
+      "repo-workflow-kickoff-handoff",
+      "repo-lab-reporting"
+    ],
+    "condition_ids": [
+      "with-graph",
+      "without-graph"
+    ]
+  },
+  "tasks": [
+    {
+      "task_id": "repo-workflow-kickoff-handoff",
+      "story_ref": "docs/themes/TH3-graph-backed-delegated-workflow/epics/E3-benchmark-and-repo-dogfooding/stories/US3-repo-workflow-snippets-and-hook-verification.md",
+      "acceptance_criteria_ref": "docs/themes/TH3-graph-backed-delegated-workflow/epics/E3-benchmark-and-repo-dogfooding/stories/US3-repo-workflow-snippets-and-hook-verification.md",
+      "history_note": "Uses the repo-local delegated-workflow verification task family that already dogfoods graph workflow kickoff and handoff."
+    },
+    {
+      "task_id": "repo-lab-reporting",
+      "story_ref": "docs/themes/TH4-experimental-evidence-lab/epics/E3-evaluation-reporting-and-dogfooding/stories/US2-lab-report-command.md",
+      "acceptance_criteria_ref": "docs/themes/TH4-experimental-evidence-lab/epics/E3-evaluation-reporting-and-dogfooding/stories/US2-lab-report-command.md",
+      "history_note": "Uses the lab-reporting task that added paired comparisons, derived reports, and explicit limitation handling."
+    }
+  ],
+  "illustrative_scores": [
+    {
+      "task_id": "repo-workflow-kickoff-handoff",
+      "condition_id": "with-graph",
+      "success": true,
+      "quality_score": 0.9,
+      "resumability_score": 0.85,
+      "human_intervention_count": 0,
+      "notes": "Illustrative baseline score: graph-backed path mirrored the repo-local kickoff and handoff flow with reusable artifacts."
+    },
+    {
+      "task_id": "repo-workflow-kickoff-handoff",
+      "condition_id": "without-graph",
+      "success": true,
+      "quality_score": 0.65,
+      "resumability_score": 0.55,
+      "human_intervention_count": 1,
+      "notes": "Illustrative baseline score: baseline path completed, but required more manual context reconstruction."
+    },
+    {
+      "task_id": "repo-lab-reporting",
+      "condition_id": "with-graph",
+      "success": true,
+      "quality_score": 0.72,
+      "resumability_score": 0.75,
+      "human_intervention_count": 0,
+      "notes": "Illustrative baseline score: graph-backed report path preserved explicit limitations, but quality remained close to baseline."
+    },
+    {
+      "task_id": "repo-lab-reporting",
+      "condition_id": "without-graph",
+      "success": true,
+      "quality_score": 0.78,
+      "resumability_score": 0.7,
+      "human_intervention_count": 0,
+      "notes": "Illustrative baseline score: baseline report output was slightly clearer on this single synthetic sample."
+    }
+  ],
+  "baseline_artifacts": {
+    "batch_plan_path": ".graph/lab/runs/batches/repo-dogfooding-baseline-v1/plan.json",
+    "run_ids": [
+      "repo-dogfood-workflow-with-graph",
+      "repo-dogfood-workflow-without-graph",
+      "repo-dogfood-report-with-graph",
+      "repo-dogfood-report-without-graph"
+    ],
+    "evaluation_paths": [
+      ".graph/lab/evaluations/repo-dogfood-workflow-with-graph.json",
+      ".graph/lab/evaluations/repo-dogfood-workflow-without-graph.json",
+      ".graph/lab/evaluations/repo-dogfood-report-with-graph.json",
+      ".graph/lab/evaluations/repo-dogfood-report-without-graph.json"
+    ],
+    "report_path": ".graph/lab/reports/report-20260326t232306z.json"
+  },
+  "limitations": [
+    "This harness is intentionally tiny: two tasks, one model, one topology, and one scored pair per task.",
+    "The committed evaluation scores are illustrative baseline inputs for exercising the lab pipeline, not empirical proof of product superiority.",
+    "Future experiments should add more tasks, repeated seeds, and human or blinded scoring before making stronger claims."
+  ]
+}

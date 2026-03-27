@@ -1,0 +1,20 @@
+{
+  "schema_version": "v1",
+  "conditions": [
+    {
+      "condition_id": "with-graph",
+      "workflow_mode": "graph_backed",
+      "description": "graph-backed delegated workflow using graph workflow start and graph workflow finish"
+    },
+    {
+      "condition_id": "without-graph",
+      "workflow_mode": "baseline",
+      "description": "baseline delegated workflow without graph-specific kickoff or handoff"
+    }
+  ],
+  "blocking_factors": [
+    "task_family",
+    "model",
+    "session_topology"
+  ]
+}
