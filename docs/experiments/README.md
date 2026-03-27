@@ -218,6 +218,49 @@ product, not as a secondary tuning detail.
 That survey is the reason VP6 prioritized precision-governed advisory kickoff
 over broader evaluation infrastructure work.
 
+### How the consulted models said they would feel working with CGE
+
+The survey was not only about "is the token delta positive?" It also asked
+whether strong coding models would feel more effective, calmer, or more settled
+working with CGE in the loop.
+
+The shared answer was:
+
+- **yes, if precision is high**
+- **no, if kickoff becomes noisy, mandatory, or overconfident**
+
+Per-model signal:
+
+- **Claude Opus 4.6**: explicitly preferred graph-backed kickoff when it is
+  selective and provenance-rich; warned that false positives are worse than
+  missing context because they distort reasoning rather than merely costing
+  extra search time
+- **Claude Opus 4.5**: aligned with the precision-first view and supported
+  continued investment because the underlying graph/handoff architecture is
+  sound; the emphasis was on calibration, not on backing away from the product
+- **GPT-5.4**: gave the clearest framing for the emotional/operational side of
+  the question — advisory kickoff would make the model feel more settled because
+  it reduces cold-start reconstruction work, but only if the system preserves
+  freedom to ignore or suppress a weak brief
+- **GPT-5.2**: was bullish on continued investment but especially cautious about
+  reporting and synthesis work, where irrelevant context can anchor the model
+  into a wrong synthesis; the model preferred a product that knows when to stay
+  quiet
+- **GPT-5.1-Codex-Max**: strongly endorsed CGE for implementation-oriented tasks
+  and said fresh context is better than low-precision recall, which reinforced
+  the need for confidence-gated kickoff rather than unconditional retrieval
+
+The important pattern is that none of the surveyed models rejected CGE as an
+idea. The "feeling" question was conditional, not negative:
+
+- they feel **better** when CGE removes cold-start waste
+- they feel **more settled** when retrieved context is inspectable and relevant
+- they feel **less safe** when the system injects unrelated history that looks authoritative
+
+So the consulting outcome was not merely "continue investing." It was
+"continue investing, but make precision control, abstention, and operator
+freedom central to the product."
+
 ## Artifact map
 
 Most raw campaign artifacts are intentionally repo-local rather than committed.
