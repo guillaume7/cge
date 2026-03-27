@@ -1,0 +1,19 @@
+{
+  "schema_version": "v1",
+  "run_id": "repo-dogfood-report-with-graph",
+  "records": [
+    {
+      "schema_version": "v1",
+      "run_id": "repo-dogfood-report-with-graph",
+      "evaluator": "automated:repo-dogfooding-baseline-v1",
+      "evaluated_at": "2026-04-02T09:30:00Z",
+      "scores": {
+        "success": true,
+        "quality_score": 0.72,
+        "resumability_score": 0.75,
+        "human_intervention_count": 0
+      },
+      "notes": "Illustrative baseline score: graph-backed report path preserved explicit limitations, but quality remained close to baseline."
+    }
+  ]
+}

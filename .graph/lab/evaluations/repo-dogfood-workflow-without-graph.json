@@ -1,0 +1,19 @@
+{
+  "schema_version": "v1",
+  "run_id": "repo-dogfood-workflow-without-graph",
+  "records": [
+    {
+      "schema_version": "v1",
+      "run_id": "repo-dogfood-workflow-without-graph",
+      "evaluator": "automated:repo-dogfooding-baseline-v1",
+      "evaluated_at": "2026-04-02T09:30:00Z",
+      "scores": {
+        "success": true,
+        "quality_score": 0.65,
+        "resumability_score": 0.55,
+        "human_intervention_count": 1
+      },
+      "notes": "Illustrative baseline score: baseline path completed, but required more manual context reconstruction."
+    }
+  ]
+}

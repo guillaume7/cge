@@ -1,11 +1,11 @@
 backlog:
   project: cognitive-graph-engine
-  last-updated: '2026-03-22T11:29:01Z'
+  last-updated: 2026-03-27T22:58:00Z
   themes:
   - id: TH1
     name: Cognitive Graph Engine MVP
     status: done
-    locked: false
+    locked: true
     vision-ref: docs/vision_of_product/VP1-MVP/
     depends-on: []
     epics:
@@ -109,7 +109,7 @@ backlog:
   - id: TH2
     name: Graph Hygiene and Stats
     status: done
-    locked: false
+    locked: true
     vision-ref: docs/vision_of_product/VP2-graph-hygiene-and-stats/
     depends-on:
     - TH1
@@ -178,3 +178,250 @@ backlog:
         file: docs/themes/TH2-graph-hygiene-and-stats/epics/E3-hygiene-apply-revision-safety/stories/US3-reject-stale-or-unsafe-plans.md
         depends-on:
         - TH2.E3.US1
+  - id: TH3
+    name: Graph-Backed Delegated Workflow
+    status: done
+    locked: true
+    vision-ref: docs/vision_of_product/VP3-embed-cge-agent-workflow/
+    depends-on:
+    - TH2
+    epics:
+    - id: TH3.E1
+      name: Workflow Bootstrap and Assets
+      status: done
+      depends-on: []
+      stories:
+      - id: TH3.E1.US1
+        title: Add `graph workflow init` and a workflow asset manifest
+        status: done
+        file: docs/themes/TH3-graph-backed-delegated-workflow/epics/E1-workflow-bootstrap-and-assets/stories/US1-workflow-init-command-and-manifest.md
+        depends-on: []
+      - id: TH3.E1.US2
+        title: Seed baseline repo graph knowledge during workflow init
+        status: done
+        file: docs/themes/TH3-graph-backed-delegated-workflow/epics/E1-workflow-bootstrap-and-assets/stories/US2-seed-baseline-repo-graph-knowledge.md
+        depends-on:
+        - TH3.E1.US1
+      - id: TH3.E1.US3
+        title: Install and refresh composable workflow assets while preserving repo overrides
+        status: done
+        file: docs/themes/TH3-graph-backed-delegated-workflow/epics/E1-workflow-bootstrap-and-assets/stories/US3-install-and-refresh-composable-workflow-assets.md
+        depends-on:
+        - TH3.E1.US1
+    - id: TH3.E2
+      name: Delegated Kickoff and Handoff
+      status: done
+      depends-on:
+      - TH3.E1
+      stories:
+      - id: TH3.E2.US1
+        title: Add `graph workflow start` readiness checks and workflow recommendations
+        status: done
+        file: docs/themes/TH3-graph-backed-delegated-workflow/epics/E2-delegated-kickoff-and-handoff/stories/US1-workflow-start-readiness-and-recommendation.md
+        depends-on:
+        - TH3.E1.US2
+        - TH3.E1.US3
+      - id: TH3.E2.US2
+        title: Produce compact kickoff envelopes and delegation briefs
+        status: done
+        file: docs/themes/TH3-graph-backed-delegated-workflow/epics/E2-delegated-kickoff-and-handoff/stories/US2-kickoff-envelope-and-delegation-brief.md
+        depends-on:
+        - TH3.E2.US1
+      - id: TH3.E2.US3
+        title: Add `graph workflow finish` writeback and handoff envelopes
+        status: done
+        file: docs/themes/TH3-graph-backed-delegated-workflow/epics/E2-delegated-kickoff-and-handoff/stories/US3-workflow-finish-writeback-and-handoff.md
+        depends-on:
+        - TH3.E2.US2
+    - id: TH3.E3
+      name: Benchmark and Repo Dogfooding
+      status: done
+      depends-on:
+      - TH3.E2
+      stories:
+      - id: TH3.E3.US1
+        title: Create delegated-workflow benchmark scenarios and local report artifacts
+        status: done
+        file: docs/themes/TH3-graph-backed-delegated-workflow/epics/E3-benchmark-and-repo-dogfooding/stories/US1-benchmark-scenarios-and-local-reports.md
+        depends-on:
+        - TH3.E2.US3
+      - id: TH3.E3.US2
+        title: Expose `graph workflow benchmark` summaries from local reports
+        status: done
+        file: docs/themes/TH3-graph-backed-delegated-workflow/epics/E3-benchmark-and-repo-dogfooding/stories/US2-workflow-benchmark-command-and-summary.md
+        depends-on:
+        - TH3.E3.US1
+      - id: TH3.E3.US3
+        title: Wire this repo's delegated-task workflow through graph-backed snippets and hooks
+        status: done
+        file: docs/themes/TH3-graph-backed-delegated-workflow/epics/E3-benchmark-and-repo-dogfooding/stories/US3-repo-workflow-snippets-and-hook-verification.md
+        depends-on:
+        - TH3.E1.US3
+        - TH3.E2.US3
+        - TH3.E3.US2
+  - id: TH4
+    name: Experimental Evidence Lab
+    status: done
+    locked: true
+    vision-ref: docs/vision_of_product/VP4-experimental-evidence-lab/
+    depends-on:
+    - TH3
+    epics:
+    - id: TH4.E1
+      name: Lab Bootstrap and Schemas
+      status: done
+      depends-on: []
+      stories:
+      - id: TH4.E1.US1
+        title: Add `graph lab init` and experiment asset scaffolding
+        status: done
+        file: docs/themes/TH4-experimental-evidence-lab/epics/E1-lab-bootstrap-and-schemas/stories/US1-lab-init-and-asset-scaffolding.md
+        depends-on: []
+      - id: TH4.E1.US2
+        title: Define benchmark suite and condition manifest schemas
+        status: done
+        file: docs/themes/TH4-experimental-evidence-lab/epics/E1-lab-bootstrap-and-schemas/stories/US2-suite-and-condition-manifest-schemas.md
+        depends-on:
+        - TH4.E1.US1
+      - id: TH4.E1.US3
+        title: Create run record and evaluation record schema contracts
+        status: done
+        file: docs/themes/TH4-experimental-evidence-lab/epics/E1-lab-bootstrap-and-schemas/stories/US3-run-and-evaluation-record-schemas.md
+        depends-on:
+        - TH4.E1.US1
+    - id: TH4.E2
+      name: Controlled Run Orchestration and Ledger
+      status: done
+      depends-on:
+      - TH4.E1
+      stories:
+      - id: TH4.E2.US1
+        title: Add `graph lab run` with declared condition, model, and topology
+        status: done
+        file: docs/themes/TH4-experimental-evidence-lab/epics/E2-controlled-run-orchestration-and-ledger/stories/US1-lab-run-command.md
+        depends-on:
+        - TH4.E1.US2
+        - TH4.E1.US3
+      - id: TH4.E2.US2
+        title: Persist immutable run records and outcome artifacts to the run ledger
+        status: done
+        file: docs/themes/TH4-experimental-evidence-lab/epics/E2-controlled-run-orchestration-and-ledger/stories/US2-immutable-run-ledger.md
+        depends-on:
+        - TH4.E2.US1
+      - id: TH4.E2.US3
+        title: Support condition randomization and seed-based reproducibility
+        status: done
+        file: docs/themes/TH4-experimental-evidence-lab/epics/E2-controlled-run-orchestration-and-ledger/stories/US3-condition-randomization-and-seeds.md
+        depends-on:
+        - TH4.E2.US1
+    - id: TH4.E3
+      name: Evaluation, Reporting, and Repo Dogfooding
+      status: done
+      depends-on:
+      - TH4.E2
+      stories:
+      - id: TH4.E3.US1
+        title: Add separated evaluation scoring with blinding support
+        status: done
+        file: docs/themes/TH4-experimental-evidence-lab/epics/E3-evaluation-reporting-and-dogfooding/stories/US1-separated-evaluation-and-blinding.md
+        depends-on:
+        - TH4.E2.US2
+      - id: TH4.E3.US2
+        title: Add `graph lab report` with paired comparisons and uncertainty
+        status: done
+        file: docs/themes/TH4-experimental-evidence-lab/epics/E3-evaluation-reporting-and-dogfooding/stories/US2-lab-report-command.md
+        depends-on:
+        - TH4.E3.US1
+      - id: TH4.E3.US3
+        title: Dogfood the experiment lab on this repo's delegated-workflow tasks
+        status: done
+        file: docs/themes/TH4-experimental-evidence-lab/epics/E3-evaluation-reporting-and-dogfooding/stories/US3-repo-dogfooding.md
+        depends-on:
+        - TH4.E3.US2
+  - id: TH5
+    name: Token-Instrumented Lab
+    status: done
+    locked: true
+    vision-ref: docs/vision_of_product/VP5-token-instrumented-lab/
+    depends-on:
+    - TH4
+    epics: []
+  - id: TH6
+    name: Precision-Governed Advisory Kickoff
+    status: done
+    locked: true
+    vision-ref: docs/vision_of_product/VP6-precision-governed-advisory-kickoff/
+    depends-on:
+    - TH5
+    epics:
+    - id: TH6.E1
+      name: Task-Family Retrieval Policies
+      status: done
+      depends-on: []
+      stories:
+      - id: TH6.E1.US1
+        title: Classify workflow-start tasks into kickoff families
+        status: done
+        file: docs/themes/TH6-precision-governed-advisory-kickoff/epics/E1-task-family-retrieval-policies/stories/US1-task-family-classification.md
+        depends-on: []
+      - id: TH6.E1.US2
+        title: Enforce family-specific entity allowlists and suppressions
+        status: done
+        file: docs/themes/TH6-precision-governed-advisory-kickoff/epics/E1-task-family-retrieval-policies/stories/US2-family-specific-entity-policies.md
+        depends-on:
+        - TH6.E1.US1
+      - id: TH6.E1.US3
+        title: Skip kickoff by default for reporting and synthesis tasks
+        status: done
+        file: docs/themes/TH6-precision-governed-advisory-kickoff/epics/E1-task-family-retrieval-policies/stories/US3-reporting-family-abstention.md
+        depends-on:
+        - TH6.E1.US2
+    - id: TH6.E2
+      name: Confidence, Provenance, and Abstention
+      status: done
+      depends-on:
+      - TH6.E1
+      stories:
+      - id: TH6.E2.US1
+        title: Compute family-aware kickoff confidence and thresholding
+        status: done
+        file: docs/themes/TH6-precision-governed-advisory-kickoff/epics/E2-confidence-provenance-and-abstention/stories/US1-family-aware-confidence-thresholds.md
+        depends-on:
+        - TH6.E1.US3
+      - id: TH6.E2.US2
+        title: Return one-line inclusion reasons for kickoff entities
+        status: done
+        file: docs/themes/TH6-precision-governed-advisory-kickoff/epics/E2-confidence-provenance-and-abstention/stories/US2-inclusion-reasons.md
+        depends-on:
+        - TH6.E2.US1
+      - id: TH6.E2.US3
+        title: Recommend pull-on-demand when kickoff confidence is low
+        status: done
+        file: docs/themes/TH6-precision-governed-advisory-kickoff/epics/E2-confidence-provenance-and-abstention/stories/US3-low-confidence-pull-on-demand.md
+        depends-on:
+        - TH6.E2.US1
+        - TH6.E2.US2
+    - id: TH6.E3
+      name: Freedom-Preserving Kickoff Controls
+      status: done
+      depends-on:
+      - TH6.E2
+      stories:
+      - id: TH6.E3.US1
+        title: Add explicit no-kickoff and minimal-kickoff controls
+        status: done
+        file: docs/themes/TH6-precision-governed-advisory-kickoff/epics/E3-freedom-preserving-kickoff-controls/stories/US1-opt-out-and-minimal-controls.md
+        depends-on:
+        - TH6.E2.US3
+      - id: TH6.E3.US2
+        title: Expose advisory kickoff state without breaking workflow compatibility
+        status: done
+        file: docs/themes/TH6-precision-governed-advisory-kickoff/epics/E3-freedom-preserving-kickoff-controls/stories/US2-advisory-kickoff-contract.md
+        depends-on:
+        - TH6.E3.US1
+      - id: TH6.E3.US3
+        title: Gracefully degrade kickoff on sparse repos and ambiguous tasks
+        status: done
+        file: docs/themes/TH6-precision-governed-advisory-kickoff/epics/E3-freedom-preserving-kickoff-controls/stories/US3-graceful-degradation.md
+        depends-on:
+        - TH6.E3.US2

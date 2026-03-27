@@ -1,0 +1,18 @@
+{
+  "schema_version": "v1",
+  "suite_id": "repo-dogfooding-baseline-v1",
+  "tasks": [
+    {
+      "task_id": "repo-workflow-kickoff-handoff",
+      "family": "delegated-non-trivial-subtask",
+      "description": "verify repo-local delegated workflow kickoff and handoff",
+      "acceptance_criteria_ref": "docs/themes/TH3-graph-backed-delegated-workflow/epics/E3-benchmark-and-repo-dogfooding/stories/US3-repo-workflow-snippets-and-hook-verification.md"
+    },
+    {
+      "task_id": "repo-lab-reporting",
+      "family": "delegated-non-trivial-subtask",
+      "description": "derive machine-readable lab reports with paired comparisons and explicit limitations",
+      "acceptance_criteria_ref": "docs/themes/TH4-experimental-evidence-lab/epics/E3-evaluation-reporting-and-dogfooding/stories/US2-lab-report-command.md"
+    }
+  ]
+}

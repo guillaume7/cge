@@ -203,3 +203,58 @@
 - internal/app/hygienecmd/command.go, command_test.go
 - internal/app/graphhealth/graphhealth.go (apply + validation logic)
 - internal/infra/kuzu/sync.go (new — ReplaceGraph, CurrentRevision)
+
+## TH3.E1 — Workflow Bootstrap and Assets
+
+### Stories Completed
+- TH3.E1.US1: Add `graph workflow init` and a workflow asset manifest
+- TH3.E1.US2: Seed baseline repo graph knowledge during workflow init
+- TH3.E1.US3: Install and refresh composable workflow assets while preserving repo overrides
+
+### Key Changes
+- Added `graph workflow init` with repo-local manifest tracking under `.graph/workflow/manifest.json`
+- Seeded baseline repo knowledge from `README.md`, `docs/architecture/`, and `docs/plan/backlog.yaml` through the normal graph write path
+- Installed managed workflow prompt/instruction/skill/hook assets with atomic refresh and preserved local overrides
+
+### Files Modified
+- internal/app/workflow/service.go, seed.go, assets.go, service_test.go
+- internal/app/workflowcmd/command.go, command_test.go
+- internal/app/graphcmd/root.go, internal/infra/repo/workspace.go
+
+## TH3.E2 — Delegated Kickoff and Handoff
+
+### Stories Completed
+- TH3.E2.US1: Add `graph workflow start` readiness checks and workflow recommendations
+- TH3.E2.US2: Produce compact kickoff envelopes and delegation briefs
+- TH3.E2.US3: Add `graph workflow finish` writeback and handoff envelopes
+
+### Key Changes
+- Added `graph workflow start` readiness inspection with proceed/bootstrap/inspect_hygiene/gather_context recommendations
+- Added compact kickoff context envelopes and prompt-ready delegation briefs with token budgeting
+- Added `graph workflow finish` with structured handoff envelopes, explicit no-op handling, strict validation, and revision-aware durable persistence
+
+### Files Modified
+- internal/app/workflow/start.go, finish.go, service.go, service_test.go
+- internal/app/workflowcmd/command.go, command_test.go
+
+## TH3.E3 — Benchmark and Repo Dogfooding
+
+### Stories Completed
+- TH3.E3.US1: Create delegated-workflow benchmark scenarios and local report artifacts
+- TH3.E3.US2: Expose `graph workflow benchmark` summaries from local reports
+- TH3.E3.US3: Wire this repo's delegated-task workflow through graph-backed snippets and hooks
+
+### Key Changes
+- Added local benchmark scenario/run artifacts under `.graph/benchmarks/` without graph persistence
+- Added `graph workflow benchmark` with deterministic comparable/incomplete/non_comparable summary output
+- Wired repo-local prompts, agents, and hooks to default non-trivial delegated work through explicit graph-backed kickoff and handoff helpers
+- Fixed revision snapshot deduplication so repo-local delegated workflow verification completes end to end
+
+### Files Modified
+- internal/infra/benchmarks/store.go, internal/app/workflow/benchmark.go, benchmark_test.go
+- internal/app/workflowcmd/command.go, internal/app/workflowcmd/repo_dogfooding_test.go
+- internal/infra/kuzu/store.go, store_test.go
+- .github/copilot-instructions.md, .github/prompts/run-autopilot.prompt.md
+- .github/agents/{orchestrator,developer,reviewer,troubleshooter}.agent.md
+- .github/hooks/autopilot-lifecycle.json, .github/hooks/scripts/*.sh
+

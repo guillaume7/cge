@@ -1,0 +1,535 @@
+{
+  "schema_version": "v1",
+  "report_id": "report-20260326t232306z",
+  "generated_at": "2026-03-26T23:23:06Z",
+  "suite_id": "repo-dogfooding-baseline-v1",
+  "selection": {
+    "mode": "selected_runs",
+    "run_ids": [
+      "repo-dogfood-workflow-with-graph",
+      "repo-dogfood-workflow-without-graph",
+      "repo-dogfood-report-with-graph",
+      "repo-dogfood-report-without-graph"
+    ]
+  },
+  "source_artifacts": {
+    "run_record_count": 4,
+    "evaluation_artifact_count": 4,
+    "batch_plans": [
+      {
+        "batch_id": "repo-dogfooding-baseline-v1",
+        "plan_path": ".graph/lab/runs/batches/repo-dogfooding-baseline-v1/plan.json",
+        "planned_at": "2026-04-02T08:55:00Z",
+        "entry_count": 4,
+        "randomized": false,
+        "model": "claude-sonnet",
+        "session_topology": "delegated-parallel"
+      }
+    ]
+  },
+  "runs_included": 4,
+  "runs_scored": 4,
+  "runs_unscored": 0,
+  "unscored_run_ids": [],
+  "paired_comparisons": [
+    {
+      "comparison_type": "paired_task",
+      "task_id": "repo-lab-reporting",
+      "task_family": "delegated-non-trivial-subtask",
+      "model": "claude-sonnet",
+      "session_topology": "delegated-parallel",
+      "pair_count": 1,
+      "scored_pair_count": 1,
+      "incomplete": false,
+      "pairings": [
+        {
+          "graph_run_id": "repo-dogfood-report-with-graph",
+          "baseline_run_id": "repo-dogfood-report-without-graph",
+          "graph_seed": 42,
+          "baseline_seed": 42,
+          "scored": true,
+          "deltas": {
+            "quality_score": -0.06000000000000005,
+            "resumability_score": 0.050000000000000044,
+            "success": 0,
+            "total_tokens": 20,
+            "wall_clock_seconds": 1
+          }
+        }
+      ],
+      "metrics": {
+        "quality_score": {
+          "higher_is_better": true,
+          "unit": "score",
+          "sample_size": 1,
+          "graph_mean": 0.72,
+          "baseline_mean": 0.78,
+          "mean_delta": -0.06000000000000005,
+          "effect_size": -0.06000000000000005,
+          "uncertainty": {
+            "method": "not_available",
+            "note": "only one scored pair was available, so no interval could be estimated"
+          },
+          "interpretation": "baseline_better"
+        },
+        "resumability_score": {
+          "higher_is_better": true,
+          "unit": "score",
+          "sample_size": 1,
+          "graph_mean": 0.75,
+          "baseline_mean": 0.7,
+          "mean_delta": 0.050000000000000044,
+          "effect_size": 0.050000000000000044,
+          "uncertainty": {
+            "method": "not_available",
+            "note": "only one scored pair was available, so no interval could be estimated"
+          },
+          "interpretation": "graph_better"
+        },
+        "success": {
+          "higher_is_better": true,
+          "unit": "score",
+          "sample_size": 1,
+          "graph_mean": 1,
+          "baseline_mean": 1,
+          "mean_delta": 0,
+          "effect_size": 0,
+          "uncertainty": {
+            "method": "not_available",
+            "note": "only one scored pair was available, so no interval could be estimated"
+          },
+          "interpretation": "no_clear_difference"
+        },
+        "total_tokens": {
+          "higher_is_better": false,
+          "unit": "tokens",
+          "sample_size": 1,
+          "graph_mean": 260,
+          "baseline_mean": 240,
+          "mean_delta": 20,
+          "effect_size": 20,
+          "uncertainty": {
+            "method": "not_available",
+            "note": "only one scored pair was available, so no interval could be estimated"
+          },
+          "interpretation": "baseline_better"
+        },
+        "wall_clock_seconds": {
+          "higher_is_better": false,
+          "unit": "seconds",
+          "sample_size": 1,
+          "graph_mean": 9,
+          "baseline_mean": 8,
+          "mean_delta": 1,
+          "effect_size": 1,
+          "uncertainty": {
+            "method": "not_available",
+            "note": "only one scored pair was available, so no interval could be estimated"
+          },
+          "interpretation": "baseline_better"
+        }
+      },
+      "limitations": [
+        "Fewer than two scored pairs are available, so interval estimates are omitted or unstable."
+      ]
+    },
+    {
+      "comparison_type": "paired_task",
+      "task_id": "repo-workflow-kickoff-handoff",
+      "task_family": "delegated-non-trivial-subtask",
+      "model": "claude-sonnet",
+      "session_topology": "delegated-parallel",
+      "pair_count": 1,
+      "scored_pair_count": 1,
+      "incomplete": false,
+      "pairings": [
+        {
+          "graph_run_id": "repo-dogfood-workflow-with-graph",
+          "baseline_run_id": "repo-dogfood-workflow-without-graph",
+          "graph_seed": 42,
+          "baseline_seed": 42,
+          "scored": true,
+          "deltas": {
+            "quality_score": 0.25,
+            "resumability_score": 0.29999999999999993,
+            "success": 0,
+            "total_tokens": -100,
+            "wall_clock_seconds": -3
+          }
+        }
+      ],
+      "metrics": {
+        "quality_score": {
+          "higher_is_better": true,
+          "unit": "score",
+          "sample_size": 1,
+          "graph_mean": 0.9,
+          "baseline_mean": 0.65,
+          "mean_delta": 0.25,
+          "effect_size": 0.25,
+          "uncertainty": {
+            "method": "not_available",
+            "note": "only one scored pair was available, so no interval could be estimated"
+          },
+          "interpretation": "graph_better"
+        },
+        "resumability_score": {
+          "higher_is_better": true,
+          "unit": "score",
+          "sample_size": 1,
+          "graph_mean": 0.85,
+          "baseline_mean": 0.55,
+          "mean_delta": 0.29999999999999993,
+          "effect_size": 0.29999999999999993,
+          "uncertainty": {
+            "method": "not_available",
+            "note": "only one scored pair was available, so no interval could be estimated"
+          },
+          "interpretation": "graph_better"
+        },
+        "success": {
+          "higher_is_better": true,
+          "unit": "score",
+          "sample_size": 1,
+          "graph_mean": 1,
+          "baseline_mean": 1,
+          "mean_delta": 0,
+          "effect_size": 0,
+          "uncertainty": {
+            "method": "not_available",
+            "note": "only one scored pair was available, so no interval could be estimated"
+          },
+          "interpretation": "no_clear_difference"
+        },
+        "total_tokens": {
+          "higher_is_better": false,
+          "unit": "tokens",
+          "sample_size": 1,
+          "graph_mean": 220,
+          "baseline_mean": 320,
+          "mean_delta": -100,
+          "effect_size": -100,
+          "uncertainty": {
+            "method": "not_available",
+            "note": "only one scored pair was available, so no interval could be estimated"
+          },
+          "interpretation": "graph_better"
+        },
+        "wall_clock_seconds": {
+          "higher_is_better": false,
+          "unit": "seconds",
+          "sample_size": 1,
+          "graph_mean": 8,
+          "baseline_mean": 11,
+          "mean_delta": -3,
+          "effect_size": -3,
+          "uncertainty": {
+            "method": "not_available",
+            "note": "only one scored pair was available, so no interval could be estimated"
+          },
+          "interpretation": "graph_better"
+        }
+      },
+      "limitations": [
+        "Fewer than two scored pairs are available, so interval estimates are omitted or unstable."
+      ]
+    }
+  ],
+  "grouped_comparisons": [
+    {
+      "grouping": "model",
+      "task_family": "delegated-non-trivial-subtask",
+      "group_count": 1,
+      "groups": [
+        {
+          "group_value": "claude-sonnet",
+          "pair_count": 2,
+          "metrics": {
+            "quality_score": {
+              "higher_is_better": true,
+              "unit": "score",
+              "sample_size": 2,
+              "graph_mean": 0.81,
+              "baseline_mean": 0.7150000000000001,
+              "mean_delta": 0.09499999999999997,
+              "effect_size": 0.09499999999999997,
+              "uncertainty": {
+                "method": "paired_mean_normal_approximation",
+                "interval_95": [
+                  -0.20880000000000004,
+                  0.3988
+                ],
+                "note": "interval uses a simple normal approximation over paired deltas"
+              },
+              "interpretation": "graph_better"
+            },
+            "resumability_score": {
+              "higher_is_better": true,
+              "unit": "score",
+              "sample_size": 2,
+              "graph_mean": 0.8,
+              "baseline_mean": 0.625,
+              "mean_delta": 0.175,
+              "effect_size": 0.175,
+              "uncertainty": {
+                "method": "paired_mean_normal_approximation",
+                "interval_95": [
+                  -0.06999999999999987,
+                  0.4199999999999998
+                ],
+                "note": "interval uses a simple normal approximation over paired deltas"
+              },
+              "interpretation": "graph_better"
+            },
+            "success": {
+              "higher_is_better": true,
+              "unit": "score",
+              "sample_size": 2,
+              "graph_mean": 1,
+              "baseline_mean": 1,
+              "mean_delta": 0,
+              "effect_size": 0,
+              "uncertainty": {
+                "method": "paired_mean_normal_approximation",
+                "interval_95": [
+                  0,
+                  0
+                ],
+                "note": "interval uses a simple normal approximation over paired deltas"
+              },
+              "interpretation": "no_clear_difference"
+            },
+            "total_tokens": {
+              "higher_is_better": false,
+              "unit": "tokens",
+              "sample_size": 2,
+              "graph_mean": 240,
+              "baseline_mean": 280,
+              "mean_delta": -40,
+              "effect_size": -40,
+              "uncertainty": {
+                "method": "paired_mean_normal_approximation",
+                "interval_95": [
+                  -157.6,
+                  77.6
+                ],
+                "note": "interval uses a simple normal approximation over paired deltas"
+              },
+              "interpretation": "graph_better"
+            },
+            "wall_clock_seconds": {
+              "higher_is_better": false,
+              "unit": "seconds",
+              "sample_size": 2,
+              "graph_mean": 8.5,
+              "baseline_mean": 9.5,
+              "mean_delta": -1,
+              "effect_size": -1,
+              "uncertainty": {
+                "method": "paired_mean_normal_approximation",
+                "interval_95": [
+                  -4.92,
+                  2.9199999999999995
+                ],
+                "note": "interval uses a simple normal approximation over paired deltas"
+              },
+              "interpretation": "graph_better"
+            }
+          },
+          "limitations": []
+        }
+      ],
+      "variation_notes": []
+    },
+    {
+      "grouping": "session_topology",
+      "task_family": "delegated-non-trivial-subtask",
+      "group_count": 1,
+      "groups": [
+        {
+          "group_value": "delegated-parallel",
+          "pair_count": 2,
+          "metrics": {
+            "quality_score": {
+              "higher_is_better": true,
+              "unit": "score",
+              "sample_size": 2,
+              "graph_mean": 0.81,
+              "baseline_mean": 0.7150000000000001,
+              "mean_delta": 0.09499999999999997,
+              "effect_size": 0.09499999999999997,
+              "uncertainty": {
+                "method": "paired_mean_normal_approximation",
+                "interval_95": [
+                  -0.20880000000000004,
+                  0.3988
+                ],
+                "note": "interval uses a simple normal approximation over paired deltas"
+              },
+              "interpretation": "graph_better"
+            },
+            "resumability_score": {
+              "higher_is_better": true,
+              "unit": "score",
+              "sample_size": 2,
+              "graph_mean": 0.8,
+              "baseline_mean": 0.625,
+              "mean_delta": 0.175,
+              "effect_size": 0.175,
+              "uncertainty": {
+                "method": "paired_mean_normal_approximation",
+                "interval_95": [
+                  -0.06999999999999987,
+                  0.4199999999999998
+                ],
+                "note": "interval uses a simple normal approximation over paired deltas"
+              },
+              "interpretation": "graph_better"
+            },
+            "success": {
+              "higher_is_better": true,
+              "unit": "score",
+              "sample_size": 2,
+              "graph_mean": 1,
+              "baseline_mean": 1,
+              "mean_delta": 0,
+              "effect_size": 0,
+              "uncertainty": {
+                "method": "paired_mean_normal_approximation",
+                "interval_95": [
+                  0,
+                  0
+                ],
+                "note": "interval uses a simple normal approximation over paired deltas"
+              },
+              "interpretation": "no_clear_difference"
+            },
+            "total_tokens": {
+              "higher_is_better": false,
+              "unit": "tokens",
+              "sample_size": 2,
+              "graph_mean": 240,
+              "baseline_mean": 280,
+              "mean_delta": -40,
+              "effect_size": -40,
+              "uncertainty": {
+                "method": "paired_mean_normal_approximation",
+                "interval_95": [
+                  -157.6,
+                  77.6
+                ],
+                "note": "interval uses a simple normal approximation over paired deltas"
+              },
+              "interpretation": "graph_better"
+            },
+            "wall_clock_seconds": {
+              "higher_is_better": false,
+              "unit": "seconds",
+              "sample_size": 2,
+              "graph_mean": 8.5,
+              "baseline_mean": 9.5,
+              "mean_delta": -1,
+              "effect_size": -1,
+              "uncertainty": {
+                "method": "paired_mean_normal_approximation",
+                "interval_95": [
+                  -4.92,
+                  2.9199999999999995
+                ],
+                "note": "interval uses a simple normal approximation over paired deltas"
+              },
+              "interpretation": "graph_better"
+            }
+          },
+          "limitations": []
+        }
+      ],
+      "variation_notes": []
+    }
+  ],
+  "summary": {
+    "warnings": [],
+    "null_results": [
+      {
+        "scope": "paired_task",
+        "metric": "success",
+        "task_id": "repo-lab-reporting",
+        "task_family": "delegated-non-trivial-subtask",
+        "model": "claude-sonnet",
+        "session_topology": "delegated-parallel",
+        "mean_delta": 0,
+        "sample_size": 1,
+        "reason": "graph matched baseline on this metric"
+      },
+      {
+        "scope": "paired_task",
+        "metric": "success",
+        "task_id": "repo-workflow-kickoff-handoff",
+        "task_family": "delegated-non-trivial-subtask",
+        "model": "claude-sonnet",
+        "session_topology": "delegated-parallel",
+        "mean_delta": 0,
+        "sample_size": 1,
+        "reason": "graph matched baseline on this metric"
+      },
+      {
+        "scope": "grouped_comparison",
+        "metric": "success",
+        "task_family": "delegated-non-trivial-subtask",
+        "grouping": "model",
+        "group_value": "claude-sonnet",
+        "mean_delta": 0,
+        "sample_size": 2,
+        "reason": "grouped graph effect was null for this metric"
+      },
+      {
+        "scope": "grouped_comparison",
+        "metric": "success",
+        "task_family": "delegated-non-trivial-subtask",
+        "grouping": "session_topology",
+        "group_value": "delegated-parallel",
+        "mean_delta": 0,
+        "sample_size": 2,
+        "reason": "grouped graph effect was null for this metric"
+      }
+    ],
+    "negative_results": [
+      {
+        "scope": "paired_task",
+        "metric": "quality_score",
+        "task_id": "repo-lab-reporting",
+        "task_family": "delegated-non-trivial-subtask",
+        "model": "claude-sonnet",
+        "session_topology": "delegated-parallel",
+        "mean_delta": -0.06000000000000005,
+        "sample_size": 1,
+        "reason": "graph underperformed the baseline on this metric"
+      },
+      {
+        "scope": "paired_task",
+        "metric": "total_tokens",
+        "task_id": "repo-lab-reporting",
+        "task_family": "delegated-non-trivial-subtask",
+        "model": "claude-sonnet",
+        "session_topology": "delegated-parallel",
+        "mean_delta": 20,
+        "sample_size": 1,
+        "reason": "graph underperformed the baseline on this metric"
+      },
+      {
+        "scope": "paired_task",
+        "metric": "wall_clock_seconds",
+        "task_id": "repo-lab-reporting",
+        "task_family": "delegated-non-trivial-subtask",
+        "model": "claude-sonnet",
+        "session_topology": "delegated-parallel",
+        "mean_delta": 1,
+        "sample_size": 1,
+        "reason": "graph underperformed the baseline on this metric"
+      }
+    ]
+  },
+  "limitations": [
+    "2 paired comparisons have fewer than two scored pairs, so interval estimates are missing or highly uncertain."
+  ]
+}

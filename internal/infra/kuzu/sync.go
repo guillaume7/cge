@@ -357,8 +357,7 @@ func latestRevisionRecord(conn *kuzudb.Connection) (revisionRecord, bool, error)
 	result, err := conn.Query(fmt.Sprintf(`MATCH (e:%s)
 WHERE e.kind = '%s'
 RETURN e.id, e.summary, e.created_at, e.created_by, e.created_session_id, e.props_json
-ORDER BY e.created_at DESC, e.id DESC
-LIMIT 1;`, entityTableName, graphRevisionKind))
+ORDER BY e.created_at DESC, e.id DESC;`, entityTableName, graphRevisionKind))
 	if err != nil {
 		return revisionRecord{}, false, fmt.Errorf("query latest revision anchor: %w", err)
 	}
@@ -367,26 +366,46 @@ LIMIT 1;`, entityTableName, graphRevisionKind))
 		return revisionRecord{}, false, nil
 	}
 
-	tuple, err := result.Next()
+	snapshot, err := readComparableSnapshot(conn)
 	if err != nil {
-		return revisionRecord{}, false, fmt.Errorf("read latest revision anchor: %w", err)
+		return revisionRecord{}, false, fmt.Errorf("read current graph snapshot: %w", err)
 	}
-	values, err := tuple.GetAsSlice()
+	currentAnchor, err := comparableSnapshotAnchor(snapshot)
 	if err != nil {
-		return revisionRecord{}, false, fmt.Errorf("decode latest revision anchor: %w", err)
+		return revisionRecord{}, false, fmt.Errorf("compute current graph snapshot anchor: %w", err)
 	}
-	props := jsonMapValue(values[5])
-	revision := revisionRecord{
-		RevisionDiffMetadata: RevisionDiffMetadata{
-			ID:               stringValue(values[0]),
-			Anchor:           stringProp(props, "anchor"),
-			Reason:           revisionReason(props, values[1]),
-			NodeCount:        intProp(props, "node_count"),
-			EdgeCount:        intProp(props, "edge_count"),
-			CreatedAt:        stringValue(values[2]),
-			CreatedBy:        stringValue(values[3]),
-			CreatedSessionID: stringValue(values[4]),
-		},
+
+	var fallback *revisionRecord
+	for result.HasNext() {
+		tuple, err := result.Next()
+		if err != nil {
+			return revisionRecord{}, false, fmt.Errorf("read latest revision anchor: %w", err)
+		}
+		values, err := tuple.GetAsSlice()
+		if err != nil {
+			return revisionRecord{}, false, fmt.Errorf("decode latest revision anchor: %w", err)
+		}
+		props := jsonMapValue(values[5])
+		revision := revisionRecord{
+			RevisionDiffMetadata: RevisionDiffMetadata{
+				ID:               stringValue(values[0]),
+				Anchor:           stringProp(props, "anchor"),
+				Reason:           revisionReason(props, values[1]),
+				NodeCount:        intProp(props, "node_count"),
+				EdgeCount:        intProp(props, "edge_count"),
+				CreatedAt:        stringValue(values[2]),
+				CreatedBy:        stringValue(values[3]),
+				CreatedSessionID: stringValue(values[4]),
+			},
+		}
+		if fallback == nil {
+			candidate := revision
+			fallback = &candidate
+		}
+		if revision.Anchor == currentAnchor {
+			return revision, true, nil
+		}
 	}
-	return revision, true, nil
+
+	return *fallback, true, nil
 }

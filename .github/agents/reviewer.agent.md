@@ -17,6 +17,17 @@ You are the **Reviewer Agent**. You perform thorough code review on implementati
 4. **Review** — apply the full checklist from skill: `code-quality` (correctness, security, quality, architecture, tests, docs)
 5. **Report** — return structured results (see Output Format)
 
+## Repo-local delegated workflow (VP3 dogfooding)
+
+For most non-trivial review handoffs in this repo, default to:
+
+- `bash .github/hooks/scripts/repo-delegated-workflow.sh kickoff --task "<review task>"`
+  or explicit `graph workflow start --task "<review task>"`
+- `bash .github/hooks/scripts/repo-delegated-workflow.sh handoff --file task-outcome.json`
+  or explicit `graph workflow finish --file task-outcome.json`
+- inspect `.graph/workflow/assets/` for the installed workflow defaults
+- honor explicit opt-outs with `--opt-out` or `CGE_REPO_WORKFLOW_OPTOUT=1`
+
 ## Tool Usage
 
 | Tool | When to use |

@@ -23,6 +23,22 @@ You are the **Developer Agent**. You implement AND test exactly ONE user story p
 
 When called with `epic-integration` scope, run integration tests across all stories in the epic. When called with `full-test-suite` scope, run the complete test suite.
 
+## Repo-local delegated workflow (VP3 dogfooding)
+
+For most non-trivial delegated tasks in this repo:
+
+1. unless explicitly opted out, begin with
+   `bash .github/hooks/scripts/repo-delegated-workflow.sh kickoff --task "<task>"`
+   or the underlying explicit `graph workflow start --task "<task>"` flow after
+   `graph workflow init` if needed
+2. inspect `.graph/workflow/assets/` if you need the installed workflow snippet
+   text that this repo is dogfooding
+3. before your final report, prepare `task-outcome.json` and run
+   `bash .github/hooks/scripts/repo-delegated-workflow.sh handoff --file task-outcome.json`
+   or `graph workflow finish --file task-outcome.json`
+4. honor explicit opt-outs via `--opt-out` or `CGE_REPO_WORKFLOW_OPTOUT=1`; do
+   not add hidden graph behavior in that case
+
 ## Tool Usage
 
 | Tool | When to use |

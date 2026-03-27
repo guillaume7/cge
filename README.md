@@ -44,7 +44,7 @@ CGE reduces that waste by making memory:
 
 ## Current command surface
 
-The `v0.2.0` release ships eight commands:
+The current branch exposes ten top-level commands:
 
 | Command | Purpose |
 | --- | --- |
@@ -56,17 +56,19 @@ The `v0.2.0` release ships eight commands:
 | `graph diff` | Compare two graph revisions |
 | `graph stats` | Measure graph size and hygiene indicators |
 | `graph hygiene` | Suggest and optionally apply graph cleanup actions |
+| `graph workflow` | Bootstrap, hand off, benchmark, and dogfood delegated workflow state |
+| `graph lab` | Run controlled workflow experiments and derive repo-local reports |
 
 ## Quick setup
 
 ### Install the released binary
 
-`v0.2.0` currently ships a Linux AMD64 archive.
+The latest tagged release is `v0.3.0`. It currently ships a Linux AMD64 archive.
 
 The release archive now includes the Kuzu runtime library (`libkuzu.so`) alongside the executable wrapper, so users do **not** need to install Kuzu separately for the packaged Linux release.
 
 ```bash
-VERSION=v0.2.0
+VERSION=v0.3.0
 curl -L -o cge.tar.gz \
   "https://github.com/guillaume7/cge/releases/download/${VERSION}/cge_${VERSION}_linux_amd64.tar.gz"
 tar -xzf cge.tar.gz
@@ -80,6 +82,8 @@ graph --help
 ```
 
 ### Or build from source
+
+Build from source if you want the latest local branch state or you are iterating ahead of the packaged Linux release artifact.
 
 Requirements:
 
@@ -186,6 +190,31 @@ graph hygiene > hygiene-plan.json
 graph hygiene --apply --file hygiene-plan.json
 ```
 
+### 8. Run a delegated workflow kickoff and handoff
+
+```bash
+graph workflow init
+graph workflow start --task "delegate a non-trivial repo task"
+graph workflow finish --file task-outcome.json
+```
+
+### 9. Summarize a benchmark comparison
+
+```bash
+graph workflow benchmark --scenario delegated-subtask-001
+```
+
+### 10. Reproduce the repo-local experiment-lab dogfooding example
+
+```bash
+python3 .graph/lab/dogfooding/run-baseline.py
+```
+
+See
+`docs/themes/TH4-experimental-evidence-lab/epics/E3-evaluation-reporting-and-dogfooding/repo-dogfooding-example.md`
+for the committed harness, example artifacts, and the current limitations of the
+tiny sample.
+
 ## Designed for chaining
 
 CGE is meant to sit inside agent workflows, not beside them.
@@ -279,6 +308,17 @@ graph hygiene > hygiene-plan.json
 graph hygiene --apply --file hygiene-plan.json
 ```
 
+### `graph workflow`
+
+Bootstrap delegated workflow assets, create kickoff briefs, persist handoff outcomes, and summarize local benchmark artifacts:
+
+```bash
+graph workflow init
+graph workflow start --task "review the repo dogfooding flow" --max-tokens 1200
+graph workflow finish --file task-outcome.json
+graph workflow benchmark --scenario delegated-subtask-001
+```
+
 ## Stable machine-readable contract
 
 Operational commands return structured JSON envelopes.
@@ -325,10 +365,12 @@ The MVP is designed to represent both project-operating knowledge and code knowl
 - Vision: [`docs/vision_of_product/VP1-MVP/`](docs/vision_of_product/VP1-MVP/)
 - Architecture: [`docs/architecture/`](docs/architecture/)
 - ADRs: [`docs/ADRs/`](docs/ADRs/)
+- Campaign experiments and reports: [`docs/experiments/`](docs/experiments/)
 
 ## Releases
 
-- Latest release: [`v0.2.0`](https://github.com/guillaume7/cge/releases/tag/v0.2.0)
+- Latest release: [`v0.3.0`](https://github.com/guillaume7/cge/releases/tag/v0.3.0)
+- `v0.3.0` ships the delegated workflow, experimental lab, token instrumentation, and precision-governed advisory kickoff surfaces from TH3 through TH6.
 - Repository: [`guillaume7/cge`](https://github.com/guillaume7/cge)
 
 ## Status

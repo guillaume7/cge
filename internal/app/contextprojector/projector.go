@@ -38,6 +38,7 @@ type Result struct {
 	Rank                 int                   `json:"rank"`
 	Score                float64               `json:"score"`
 	Entity               Entity                `json:"entity"`
+	InclusionReason      string                `json:"inclusion_reason,omitempty"`
 	Relationships        []Relationship        `json:"relationships,omitempty"`
 	MatchedTerms         []string              `json:"matched_terms,omitempty"`
 	Provenance           *retrieval.Provenance `json:"provenance,omitempty"`

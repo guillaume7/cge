@@ -556,13 +556,13 @@ func defaultRecordRevisionAnchor(conn *kuzudb.Connection, metadata graphpayload.
 		}
 	}
 
-	snapshotJSON, err := json.Marshal(snapshot)
+	anchor, err := comparableSnapshotAnchor(snapshot)
 	if err != nil {
 		return RevisionWriteSummary{}, &PersistenceError{
 			Code:    "revision_anchor_unavailable",
 			Message: "graph write could not record revision metadata",
 			Details: map[string]any{
-				"reason": fmt.Sprintf("encode revision snapshot: %v", err),
+				"reason": fmt.Sprintf("compute revision anchor: %v", err),
 			},
 		}
 	}
@@ -578,8 +578,6 @@ func defaultRecordRevisionAnchor(conn *kuzudb.Connection, metadata graphpayload.
 		}
 	}
 
-	anchorSum := sha256.Sum256(snapshotJSON)
-	anchor := hex.EncodeToString(anchorSum[:])
 	revisionNode := entityInput{
 		ID:      revisionID,
 		Kind:    graphRevisionKind,
@@ -758,6 +756,15 @@ func generateRevisionID() (string, error) {
 	return "rev:" + hex.EncodeToString(raw[:]), nil
 }
 
+func comparableSnapshotAnchor(snapshot graphSnapshot) (string, error) {
+	snapshotJSON, err := json.Marshal(snapshot)
+	if err != nil {
+		return "", err
+	}
+	anchorSum := sha256.Sum256(snapshotJSON)
+	return hex.EncodeToString(anchorSum[:]), nil
+}
+
 func readComparableSnapshot(conn *kuzudb.Connection) (graphSnapshot, error) {
 	snapshot := graphSnapshot{
 		Nodes: []graphSnapshotNode{},
@@ -802,6 +809,7 @@ ORDER BY e.id;`, entityTableName, graphRevisionKind))
 		})
 	}
 
+	seenEdges := map[string]struct{}{}
 	edgeResult, err := conn.Query(fmt.Sprintf(`MATCH (from:%s)-[r:%s]->(to:%s)
 WHERE from.kind <> '%s' AND to.kind <> '%s'
 RETURN from.id, to.id, r.kind, r.props_json, r.created_at, r.updated_at, r.created_by, r.updated_by, r.created_session_id, r.updated_session_id
@@ -820,7 +828,7 @@ ORDER BY from.id, r.kind, to.id;`, entityTableName, relationTableName, entityTab
 		if err != nil {
 			return graphSnapshot{}, fmt.Errorf("decode comparable relationship tuple: %w", err)
 		}
-		snapshot.Edges = append(snapshot.Edges, graphSnapshotEdge{
+		edge := graphSnapshotEdge{
 			From:             stringValue(values[0]),
 			To:               stringValue(values[1]),
 			Kind:             stringValue(values[2]),
@@ -831,7 +839,13 @@ ORDER BY from.id, r.kind, to.id;`, entityTableName, relationTableName, entityTab
 			UpdatedBy:        stringValue(values[7]),
 			CreatedSessionID: stringValue(values[8]),
 			UpdatedSessionID: stringValue(values[9]),
-		})
+		}
+		key := edgeKey(edge.From, edge.Kind, edge.To)
+		if _, duplicate := seenEdges[key]; duplicate {
+			continue
+		}
+		seenEdges[key] = struct{}{}
+		snapshot.Edges = append(snapshot.Edges, edge)
 	}
 
 	return snapshot, nil

@@ -1,4 +1,4 @@
-# Tech Stack — Cognitive Graph Engine VP1 + VP2
+# Tech Stack — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4
 
 ## Overview
 
@@ -24,6 +24,13 @@ user review.
 | Text relevance index | Bleve | Embedded full-text ranking, offline, easy Go integration | ADR-006 |
 | Hygiene analysis | In-process Go analyzers over graph snapshots | Reuse current store and avoid adding services or a second data platform | ADR-007 |
 | Stats computation | On-demand snapshot metrics in-process | Avoid a metrics backend and keep stats cheap, local, and explicit | ADR-008 |
+| Workflow orchestration | Thin in-process Go workflow service | Compose existing graph primitives for delegated subtasks without a daemon or control plane | ADR-009 |
+| Workflow metadata | Composable markdown/YAML/snippet assets + small shell hooks | Make graph-backed delegation natural without rigid repo takeover | ADR-010 |
+| Benchmark reports | Local JSON reports + CLI-facing summary surface | Keep benchmark evidence reproducible and local while still machine-readable | ADR-011 |
+| Experiment orchestration | Thin in-process Go lab orchestrator | Compose existing workflow and benchmark primitives into controlled experiment batches without a daemon or external platform | ADR-012 |
+| Run ledger | Local filesystem JSON records under `.graph/lab/` | Keep run artifacts immutable, inspectable, and traceable without an external database | ADR-013 |
+| Evaluation / scoring | Separated in-process evaluation step with blinding support | Enable condition-blind quality scoring and independent re-evaluation | ADR-014 |
+| Report generation | In-process statistical aggregation to local JSON reports | Derive scientific-style reports from run and evaluation artifacts without external analytics tooling | ADR-013 |
 | Payload format | Versioned JSON | Native machine-readable protocol for stdin/stdout/files | ADR-005 |
 | Testing | Go `testing` package | Keep setup simple and standard | ADR-001 |
 | Build / dependency management | Go modules | Reproducible builds with `go.mod` and `go.sum` | ADR-001 |
@@ -116,6 +123,90 @@ Trade-off:
 - expensive metrics must be computed efficiently enough for interactive CLI use
 - no historical trends are available unless a later phase adds them
 
+### Thin workflow orchestration
+
+Why it fits:
+
+- VP3 only needs the delegated-subtask golden path, not a full workflow platform
+- reuses existing retrieval, stats, hygiene, write, and revision primitives
+- keeps orchestration explicit and local
+
+Trade-off:
+
+- adds orchestration glue that must remain disciplined and narrow
+- may feel redundant if the workflow envelopes are not materially better than ad
+  hoc prompting
+
+### Composable workflow metadata and small hooks
+
+Why they fit:
+
+- the current pain point is wiring prompts, skills, and instructions to use the graph
+- snippets are easier to adopt than a rigid repo takeover
+- small hooks can reduce friction without hiding the actual workflow commands
+
+Trade-off:
+
+- too many snippets or hooks can become ceremony
+- local overrides need clear preservation rules during refresh
+
+### Local benchmark reports
+
+Why they fit:
+
+- benchmark evidence must stay reproducible and inspectable inside the repo
+- JSON reports are easy to diff, archive, and summarize from the CLI
+- avoids external telemetry services for the first benchmark phase
+
+Trade-off:
+
+- output-quality measurement still needs careful rubric design
+- benchmark harness realism depends on good scenario selection
+
+### In-process experiment lab orchestrator
+
+Why it fits:
+
+- VP4 needs controlled multi-factor experiments, not a hosted platform
+- composing existing workflow and benchmark primitives keeps the new layer thin
+- batch orchestration, condition assignment, and randomization are lightweight
+  logic that fit naturally in the CLI process
+
+Trade-off:
+
+- adds a new orchestration layer that must stay disciplined
+- statistical reporting adds implementation complexity beyond simple aggregation
+
+### Filesystem-based run ledger
+
+Why it fits:
+
+- run artifacts must be immutable, inspectable, and traceable without tooling
+- JSON files under `.graph/lab/runs/` are easy to diff, archive, and audit
+- avoids adding a database dependency for experiment metadata
+- aligns with the repo-local artifact philosophy from VP1 through VP3
+
+Trade-off:
+
+- querying across many runs requires in-process scanning rather than indexed
+  queries
+- large experiment batches may be slower to aggregate than a database-backed
+  alternative
+
+### Separated evaluation with blinding support
+
+Why it fits:
+
+- VP4 principles explicitly require execution/judgment separation
+- storing evaluation records outside run records enables re-scoring and blinding
+- supports both automated rubrics and human judgment without changing the run
+  path
+
+Trade-off:
+
+- two-phase workflow (run then evaluate) is more complex than inline scoring
+- blinding requires careful artifact presentation to strip condition metadata
+
 ## Rejected Simpler/Heavier Options
 
 ### Python
@@ -154,3 +245,38 @@ Trade-off:
 - Cons: violates the explicit/safe-by-default cleanup principle and adds runtime
   complexity
 - Rejected because: VP2 should suggest first and apply only on explicit request
+
+### Full workflow automation daemon in VP3
+- Pros: could make graph usage automatic everywhere
+- Cons: high hidden complexity, weak transparency, difficult to trust during dogfooding
+- Rejected because: VP3 must first prove the delegated-subtask golden path with
+  explicit, inspectable workflow steps
+
+### Rigid repo-wide metadata takeover in VP3
+- Pros: stronger standardization, fewer local choices
+- Cons: too invasive for current dogfooding, harder to preserve repo conventions
+- Rejected because: composable snippets are the lower-risk adoption path
+
+### External observability platform for workflow benchmarking
+- Pros: richer analytics and long-term dashboards
+- Cons: hosted complexity, privacy concerns, operational overhead
+- Rejected because: VP3 needs local evidence first, not a telemetry platform
+
+### Hosted experiment platform or online dashboard for VP4
+- Pros: collaborative experiment design, richer visualization, persistent history
+- Cons: violates local-first principle, adds deployment and privacy overhead
+- Rejected because: VP4 must stay local and inspectable; the experiment lab must
+  work from repo-local artifacts with zero external dependencies
+
+### SQLite or embedded database for the VP4 run ledger
+- Pros: richer querying, better aggregation primitives, indexed access
+- Cons: adds a dependency, complicates the single-binary story, overkill for
+  expected experiment scale
+- Rejected because: filesystem-based JSON records are sufficient for VP4 scope
+  and can be reconsidered if experiment scale demands it
+
+### Inline quality scoring during VP4 run execution
+- Pros: simpler single-step workflow, immediate results
+- Cons: prevents blinding, couples scoring to execution, cannot re-evaluate
+- Rejected because: VP4 principles explicitly require execution/judgment
+  separation to reduce confirmation bias

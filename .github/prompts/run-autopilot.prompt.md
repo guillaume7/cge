@@ -14,6 +14,20 @@ tools: [read, edit, search, execute, agent, todo, github/github-mcp-server/defau
 | @troubleshooter | `the-copilot-build-method`, `bdd-stories`, `code-quality` | GitHub MCP, gh CLI, git CLI |
 | @product-owner | `the-copilot-build-method`, `bdd-stories`, `backlog-management` | GitHub MCP, gh CLI, git CLI |
 
+## Repo-local delegated workflow
+
+For most non-trivial delegated subtasks in this repo, use the explicit repo
+dogfooding helper:
+
+- kickoff:
+  `bash .github/hooks/scripts/repo-delegated-workflow.sh kickoff --task "<delegated task>"`
+- handoff:
+  `bash .github/hooks/scripts/repo-delegated-workflow.sh handoff --file task-outcome.json`
+- direct fallback:
+  `graph workflow init`, `graph workflow start`, and `graph workflow finish`
+- opt-out:
+  `--opt-out` or `CGE_REPO_WORKFLOW_OPTOUT=1`
+
 Begin autonomous execution of the product backlog.
 
 ## Pre-flight Checks

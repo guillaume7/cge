@@ -35,6 +35,24 @@ This is a **template repository** for AI-driven autonomous product development. 
 | **loom-debug** | 4B | Diagnoses CI failures on a pull request |
 | **loom-merge** | 4B | Merges a pull request by number |
 
+## Repo-Local Delegated Workflow (VP3 Dogfooding)
+
+For most non-trivial delegated subtasks in this repository:
+
+- inspect the installed defaults under `.graph/workflow/assets/` after
+  `graph workflow init` when you need the managed workflow snippets
+- unless the user or parent agent explicitly opts out, start the delegated task
+  with `bash .github/hooks/scripts/repo-delegated-workflow.sh kickoff --task "<task>"`
+  or the underlying explicit commands `graph workflow init` (if needed) and
+  `graph workflow start --task "<task>"`
+- before ending the delegated task, persist a structured outcome with
+  `bash .github/hooks/scripts/repo-delegated-workflow.sh handoff --file task-outcome.json`
+  or `graph workflow finish --file task-outcome.json`
+- honor explicit opt-outs with `--opt-out` or `CGE_REPO_WORKFLOW_OPTOUT=1`; in
+  that mode no wrapper or hook should run hidden graph commands
+- keep kickoff and handoff explicit and inspectable instead of inventing
+  repo-specific prompt folklore
+
 ## Skills Reference
 
 Each topic below is owned by exactly one skill. See the skill for canonical details.
@@ -51,6 +69,7 @@ Each topic below is owned by exactly one skill. See the skill for canonical deta
 ## Anti-Patterns
 
 - **Never hardcode state in agent memory** — always read/write `docs/plan/backlog.yaml`
+- **Never jump from a new VP idea straight to architecture or theme planning** — first stay in Phase 1, pitch your understanding, surface product options and open questions, and get explicit user alignment on the VP direction
 - **Never skip the troubleshooter** — failed stories must be fixed before epic completion
 - **Never modify vision docs during Phase 4** — vision is frozen for the theme currently in execution (future VPs can be amended at user checkpoints)
 - **Never implement multiple stories in one agent session** — 1 story = 1 developer call

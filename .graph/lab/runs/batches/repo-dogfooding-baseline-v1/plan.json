@@ -1,0 +1,39 @@
+{
+  "schema_version": "v1",
+  "batch_id": "repo-dogfooding-baseline-v1",
+  "planned_at": "2026-04-02T08:55:00Z",
+  "model": "claude-sonnet",
+  "session_topology": "delegated-parallel",
+  "seed": 42,
+  "randomized": false,
+  "task_ids": [
+    "repo-workflow-kickoff-handoff",
+    "repo-lab-reporting"
+  ],
+  "condition_ids": [
+    "with-graph",
+    "without-graph"
+  ],
+  "entries": [
+    {
+      "order": 1,
+      "task_id": "repo-workflow-kickoff-handoff",
+      "condition_id": "with-graph"
+    },
+    {
+      "order": 2,
+      "task_id": "repo-workflow-kickoff-handoff",
+      "condition_id": "without-graph"
+    },
+    {
+      "order": 3,
+      "task_id": "repo-lab-reporting",
+      "condition_id": "with-graph"
+    },
+    {
+      "order": 4,
+      "task_id": "repo-lab-reporting",
+      "condition_id": "without-graph"
+    }
+  ]
+}
