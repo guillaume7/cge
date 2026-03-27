@@ -14,9 +14,15 @@ import (
 )
 
 const (
-	WorkspaceDirName       = ".graph"
-	ConfigFileName         = "config.json"
-	WorkspaceSchemaVersion = "v1"
+	WorkspaceDirName          = ".graph"
+	ConfigFileName            = "config.json"
+	WorkflowDirName           = "workflow"
+	WorkflowManifestName      = "manifest.json"
+	BenchmarksDirName         = "benchmarks"
+	LabDirName                = "lab"
+	LabSuiteManifestName      = "suite.json"
+	LabConditionsManifestName = "conditions.json"
+	WorkspaceSchemaVersion    = "v1"
 )
 
 var (
@@ -109,6 +115,7 @@ func (m *Manager) InitWorkspace(ctx context.Context, startDir string) (InitResul
 		workspacePath,
 		filepath.Join(workspacePath, "kuzu"),
 		filepath.Join(workspacePath, "index"),
+		filepath.Join(workspacePath, BenchmarksDirName),
 		filepath.Join(workspacePath, "tmp"),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

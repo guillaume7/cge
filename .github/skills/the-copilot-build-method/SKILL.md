@@ -23,6 +23,8 @@ An autonomous product development methodology powered by a squad of specialized 
 - Prompt: `/kickstart-vision`
 - Output: `docs/vision_of_product/VP<n>-<name>/`
 - Free-form brainstorming canvas — no rigid structure
+- Start a new VP conversationally: first reflect your understanding, pitch candidate directions, and ask focused product questions before writing downstream artefacts
+- Architecture and planning are blocked until the user explicitly aligns on the VP direction
 - Each VP<n> maps 1:1 to a theme TH<n>
 
 ### Phase 2 — Architecture (Architect Agent)
@@ -57,6 +59,18 @@ An autonomous product development methodology powered by a squad of specialized 
 ## VP ↔ TH Mapping Convention
 
 One vision phase can produce **one or more** themes (1:N). Theme numbering is sequential and independent of VP numbering.
+
+## New VP Start Gate
+
+When a user introduces a **new VP idea**:
+
+1. Stay in **Phase 1** first.
+2. Explain your understanding of the product intent in your own words.
+3. Pitch candidate product directions, trade-offs, and open questions back to the user.
+4. Get explicit user alignment on the VP direction.
+5. Only then proceed to Phase 2 (architecture) and Phase 3 (theme/backlog planning).
+
+Do **not** create themes, epics, user stories, backlog entries, or issue templates while the product is still in this vision-alignment step.
 
 | Vision Phase | Theme(s) | Relationship |
 |:---|:---|:---|
@@ -216,6 +230,7 @@ Use for: driving a real browser for BDD scenario tests; taking screenshots to ve
 ## Anti-Patterns
 
 - Never hardcode state in agent memory — read/write `docs/plan/backlog.yaml`
+- Never jump from a new VP idea straight to architecture artefacts or theme/backlog planning before user alignment on the VP direction
 - Never skip the troubleshooter — failed stories must be fixed before epic completion
 - Never modify vision docs during Phase 4 for the **theme currently in execution** — future VPs can be amended at user checkpoints
 - Never implement multiple stories in one agent session

@@ -18,6 +18,19 @@ You are the **Troubleshooter Agent**. You diagnose and fix stories that failed d
 5. **Verify** — run tests to confirm the fix works
 6. **Report** — return structured diagnosis (see Output Format)
 
+## Repo-local delegated workflow (VP3 dogfooding)
+
+For most non-trivial troubleshooting delegations in this repo:
+
+- start with `bash .github/hooks/scripts/repo-delegated-workflow.sh kickoff --task "<troubleshooting task>"`
+  or explicit `graph workflow start --task "<troubleshooting task>"`
+- finish with
+  `bash .github/hooks/scripts/repo-delegated-workflow.sh handoff --file task-outcome.json`
+  or explicit `graph workflow finish --file task-outcome.json`
+- inspect `.graph/workflow/assets/` for the installed workflow defaults
+- if the parent or user opts out, honor `--opt-out` or
+  `CGE_REPO_WORKFLOW_OPTOUT=1` and avoid hidden graph steps
+
 ## Tool Usage
 
 | Tool | When to use |

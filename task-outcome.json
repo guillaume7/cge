@@ -1,0 +1,78 @@
+{
+  "schema_version": "v1",
+  "metadata": {
+    "agent_id": "developer",
+    "session_id": "th4-e3-us3-repo-dogfooding",
+    "timestamp": "2026-03-26T23:26:30Z",
+    "revision": {
+      "properties": {
+        "execution_usage": {
+          "measurement_status": "complete",
+          "source": "workflow_finish_payload",
+          "provider": "copilot-cli",
+          "input_tokens": 8200,
+          "output_tokens": 1800,
+          "total_tokens": 10000
+        }
+      }
+    }
+  },
+  "task": "Implement TH4.E3.US3 repo dogfooding experiment harness",
+  "summary": "Added a repo-local dogfooding harness for graph lab with committed manifests, illustrative baseline artifacts, documentation, and tests while preserving valid customized lab manifests during graph lab init.",
+  "decisions": [
+    {
+      "summary": "Preserve valid customized lab manifests during graph lab init",
+      "rationale": "Repo-specific dogfooding manifests should survive init instead of being reset to the empty scaffold.",
+      "status": "accepted"
+    },
+    {
+      "summary": "Commit a tiny illustrative repo dogfooding baseline under .graph/lab",
+      "rationale": "The story asks for a reproducible repo-first example harness and baseline artifacts without overstating claims from a tiny sample.",
+      "status": "accepted"
+    }
+  ],
+  "changed_artifacts": [
+    {
+      "path": "internal/app/lab/service.go",
+      "summary": "Preserve valid customized suite and condition manifests during lab init; only refresh invalid or stale manifests.",
+      "change_type": "updated",
+      "language": "go"
+    },
+    {
+      "path": "internal/app/lab/service_test.go",
+      "summary": "Added regression coverage for preserving valid customized manifests during lab init.",
+      "change_type": "updated",
+      "language": "go"
+    },
+    {
+      "path": "internal/app/labcmd/repo_dogfooding_test.go",
+      "summary": "Added repo-level tests for the committed dogfooding harness, docs, and baseline report limitations.",
+      "change_type": "added",
+      "language": "go"
+    },
+    {
+      "path": ".graph/lab/",
+      "summary": "Added repo-local suite, conditions, baseline manifest, helper script, sample run/evaluation/report artifacts, and supporting documentation links for the dogfooding experiment.",
+      "change_type": "updated",
+      "language": "json"
+    },
+    {
+      "path": "docs/themes/TH4-experimental-evidence-lab/epics/E3-evaluation-reporting-and-dogfooding/repo-dogfooding-example.md",
+      "summary": "Documented the end-to-end repo dogfooding flow and explicit sample-size limitations.",
+      "change_type": "added",
+      "language": "markdown"
+    },
+    {
+      "path": "README.md",
+      "summary": "Documented the graph lab command surface and linked the repo dogfooding example.",
+      "change_type": "updated",
+      "language": "markdown"
+    }
+  ],
+  "follow_up": [
+    {
+      "summary": "Expand the repo dogfooding suite beyond two tasks and a single seed before drawing stronger empirical conclusions.",
+      "status": "proposed"
+    }
+  ]
+}

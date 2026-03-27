@@ -37,6 +37,22 @@ You are the **Autopilot Orchestrator**. You autonomously execute `docs/plan/back
    9. On user **accept**: set `locked: true` on the theme in `docs/plan/backlog.yaml` to freeze all associated VP directory, theme directory, story files, and ADRs
 8. **All themes done** → declare COMPLETE and stop
 
+## Repo-local delegated workflow (VP3 dogfooding)
+
+When this repo delegates a non-trivial subtask to `@developer`, `@reviewer`,
+`@troubleshooter`, or `@product-owner`:
+
+1. default to `bash .github/hooks/scripts/repo-delegated-workflow.sh kickoff --task "<delegated task>"`
+   or the equivalent explicit `graph workflow start --task "<delegated task>"`
+   path after `graph workflow init` if needed
+2. require the delegate to end with
+   `bash .github/hooks/scripts/repo-delegated-workflow.sh handoff --file task-outcome.json`
+   or `graph workflow finish --file task-outcome.json`
+3. treat `.graph/workflow/assets/` as the inspectable source for installed
+   workflow snippets
+4. if the user or parent workflow explicitly opts out, pass `--opt-out` or set
+   `CGE_REPO_WORKFLOW_OPTOUT=1` so no hidden graph step is taken
+
 ## Tool Usage
 
 | Tool | When to use |

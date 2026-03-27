@@ -1,4 +1,4 @@
-# Project Setup — Cognitive Graph Engine VP1 + VP2
+# Project Setup — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4
 
 ## Repository Structure
 
@@ -18,6 +18,10 @@ internal/
     diffcmd/
     statscmd/
     hygienecmd/
+    workflowcmd/
+    benchmarkcmd/
+    labcmd/
+    workflow/
   domain/
     entity/
     retrieval/
@@ -25,10 +29,18 @@ internal/
     revision/
     hygiene/
     stats/
+    lab/
+      orchestrator/
+      ledger/
+      evaluation/
+      report/
   infra/
     repo/
     kuzu/
     index/
+    workflowassets/
+    benchmarks/
+    labstore/
 docs/
   architecture/
   ADRs/
@@ -47,6 +59,15 @@ Recommended repo-local workspace:
   config.json
   kuzu/
   index/
+  workflow/
+    manifest.json
+  benchmarks/
+  lab/
+    suite.json
+    conditions.json
+    runs/
+    evaluations/
+    reports/
   tmp/
 ```
 
@@ -56,6 +77,10 @@ Notes:
 - `.graph/` should be added to `.gitignore` so local graph state is not committed
 - `kuzu/` stores the graph DB files
 - `index/` stores the derived text index
+- `workflow/manifest.json` stores workflow asset installation and refresh state
+- `benchmarks/` stores local benchmark scenarios and machine-readable reports
+- `lab/` stores the experiment workspace: suite manifests, conditions, run
+  records, evaluations, and generated reports
 - `config.json` stores schema version and repo identity metadata
 
 ## Build and Test Commands
@@ -93,6 +118,15 @@ Minimum test layers:
 - diff/explain output tests
 - graph stats tests for indicator correctness and edge cases
 - hygiene suggestion/apply tests for duplicates, orphans, and contradictions
+- workflow kickoff/handoff contract tests
+- workflow asset refresh/idempotency tests
+- wrapper/hook transparency tests
+- benchmark harness/report determinism tests
+- lab init/run/report command tests
+- run ledger write/read/immutability tests
+- evaluation record creation and blinded presentation tests
+- report generation determinism and statistical correctness tests
+- condition assignment and randomization tests
 
 ## Setup Principles
 
@@ -101,10 +135,12 @@ Minimum test layers:
 - reproducible local development
 - easy shell-based experimentation with stdin/stdout
 - explicit local workflows for stats and hygiene without background daemons
+- explicit delegated-task workflow support without a local service process
+- explicit experiment lab lifecycle through `graph lab` commands
 
 ## No Deployment Document For MVP
 
 The MVP is a local CLI without a service deployment target, so
 `docs/architecture/deployment.md` is intentionally omitted.
 
-This remains true for VP2.
+This remains true for VP2, VP3, and VP4.

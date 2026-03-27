@@ -40,6 +40,15 @@ Create markdown files covering:
 
 ## Let's start
 
+For a **new VP**, do not jump straight to architecture or themes.
+
+First:
+1. Restate your understanding of the product intent in your own words
+2. Pitch one or more candidate directions or framing options
+3. Ask focused questions that reduce product ambiguity
+4. Wait for user alignment before writing downstream artefacts beyond the VP discussion draft
+
+Then ask:
 1. What is the product you want to build?
 2. What problem does it solve?
 3. Who is it for?

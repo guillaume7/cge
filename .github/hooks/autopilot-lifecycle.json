@@ -5,6 +5,11 @@
         "type": "command",
         "command": "if [ -f docs/plan/backlog.yaml ]; then echo '=== BACKLOG STATE ==='; head -80 docs/plan/backlog.yaml; echo; echo '=== SESSION LOG (last 10) ==='; tail -10 docs/plan/session-log.md 2>/dev/null || echo 'No previous session'; fi",
         "timeout": 5
+      },
+      {
+        "type": "command",
+        "command": "bash .github/hooks/scripts/announce-delegated-workflow.sh",
+        "timeout": 5
       }
     ],
     "SubagentStop": [
