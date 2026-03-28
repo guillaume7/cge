@@ -295,3 +295,35 @@
 ### 2026-03-27T22:58:00Z
 - status-change: TH6 locked
 - Context: Accepted the TH6 checkpoint, set `locked: true`, prepared TH6 release notes, and aligned README release references for `v0.3.0`.
+### 2026-03-28T02:20:00Z
+- planning-update: TH7 added → todo
+- Context: Added VP7 verification-calibrated audit kickoff planning artefacts, ADR-017, TH7 epic/story specs, active TH7 issue templates, and backlog state after the TH6 confirmation batch exposed verification-family regressions.
+### 2026-03-28T11:55:00Z
+- status-change: TH7 → done
+- Context: Implemented verification subprofile routing, stricter verification thresholds and token budgets, verification contamination reason codes, workflow-start and baseline prompt artifact capture in lab runs, and report-level verification attribution with a rerun gate. Full `go test ./...` passed and TH7 issue templates were archived.
+2026-03-28T00:15:50Z | Subagent completed
+2026-03-28T00:16:37Z | Subagent completed
+2026-03-28T00:41:22Z | Subagent completed
+2026-03-28T00:44:52Z | Subagent completed
+2026-03-28T00:45:02Z | Subagent completed
+2026-03-28T00:45:54Z | Subagent completed
+2026-03-28T00:46:20Z | Subagent completed
+2026-03-28T00:46:35Z | Subagent completed
+2026-03-28T01:29:17Z | Subagent completed
+2026-03-28T11:38:26Z | Subagent completed
+2026-03-28T11:52:04Z | Subagent completed
+2026-03-28T13:52:02Z | Subagent completed
+2026-03-28T13:54:26Z | Subagent completed
+2026-03-28T13:56:07Z | Subagent completed
+2026-03-28T14:02:09Z | Subagent completed
+2026-03-28T14:02:13Z | Subagent completed
+2026-03-28T14:03:35Z | Subagent completed
+2026-03-28T14:04:15Z | Subagent completed
+2026-03-28T14:04:30Z | Subagent completed
+2026-03-28T14:18:43Z | Subagent completed
+2026-03-28T14:18:52Z | Subagent completed
+2026-03-28T14:22:50Z | Subagent completed
+2026-03-28T14:37:18Z | Subagent completed
+### 2026-03-28T15:00:00Z
+- documentation-update: final investment assessment recorded
+- Context: Added the final experiment conclusion document under `docs/experiments/`, linked it from the main README and experiment index, and recorded that the current CGE implementation is not a strong enough foundation for further broad product investment despite useful local wins and informative consulting feedback.

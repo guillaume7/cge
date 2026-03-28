@@ -1,4 +1,4 @@
-# Architecture Overview — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP5 + VP6
+# Architecture Overview — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP5 + VP6 + VP7
 
 ## System Context
 
@@ -57,10 +57,16 @@ for machine use rather than human graph exploration.
 - classify delegated workflow-start tasks into kickoff families
 - apply family-specific entity-type allowlists and suppressions before context
   injection
+- route verification/audit work into narrower kickoff sub-profiles before policy
+  selection
+- apply verification-specific suppressions, token caps, and downgrade rules for
+  stats audits and workflow-verification tasks
 - emit advisory kickoff confidence and abstention recommendations
 - explain why each kickoff entity was included in the delegation brief
 - allow explicit no-kickoff and minimal-kickoff operation without breaking the
   existing workflow contract
+- preserve raw workflow-start and baseline prompt-surface attribution for
+  verification-focused reruns
 
 ### Non-Functional
 
@@ -74,6 +80,8 @@ for machine use rather than human graph exploration.
 - transparent automation that remains inspectable and easy to opt out of
 - precision-biased kickoff behavior where false positives are treated as more
   harmful than missing context
+- verification and audit kickoff that prefers bounded, explainable evidence over
+  broad recall
 - reproducible benchmark runs with comparable task quality checks
 - artifact-first experiment evidence traceable to concrete run records
 - separated evaluation that supports blinding and re-scoring

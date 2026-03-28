@@ -366,6 +366,8 @@ The MVP is designed to represent both project-operating knowledge and code knowl
 - Architecture: [`docs/architecture/`](docs/architecture/)
 - ADRs: [`docs/ADRs/`](docs/ADRs/)
 - Campaign experiments and reports: [`docs/experiments/`](docs/experiments/)
+- Final investment assessment: [`docs/experiments/final-investment-assessment.md`](docs/experiments/final-investment-assessment.md)
+- Final investment assessment: [`docs/experiments/final-investment-assessment.md`](docs/experiments/final-investment-assessment.md)
 
 ## Releases
 

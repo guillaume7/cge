@@ -26,7 +26,20 @@ func TestServiceRunExecutesGraphBackedConditionWithWorkflowPrimitives(t *testing
 	writeSuiteWithSingleTask(t, repoDir)
 
 	now := time.Date(2026, 4, 1, 10, 30, 0, 0, time.UTC)
-	runner := &stubWorkflowRunner{}
+	runner := &stubWorkflowRunner{
+		startResult: workflow.StartResult{
+			Kickoff: workflow.KickoffEnvelope{
+				Task: workflow.KickoffTaskDetails{
+					Family:     workflow.KickoffFamilyVerificationAudit,
+					Subprofile: workflow.KickoffVerificationProfileWorkflow,
+				},
+				Advisory: workflow.KickoffAdvisoryState{
+					EffectiveMode:   workflow.KickoffModeMinimal,
+					ConfidenceScore: 0.72,
+				},
+			},
+		},
+	}
 	service.NowForTest(func() time.Time { return now })
 	service.WorkflowRunnerForTest(runner)
 
@@ -73,6 +86,10 @@ func TestServiceRunExecutesGraphBackedConditionWithWorkflowPrimitives(t *testing
 	if record.Telemetry.TotalTokens != nil {
 		t.Fatalf("total_tokens = %#v, want nil without authoritative execution usage", record.Telemetry.TotalTokens)
 	}
+	if got := record.WorkflowStartResponseRef; got != "artifacts/workflow-start-response.json" {
+		t.Fatalf("workflow_start_response_ref = %q, want workflow start response ref", got)
+	}
+	assertExists(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", result.RunID, record.WorkflowStartResponseRef))
 }
 
 func TestServiceRunExecutesBaselineConditionWithoutWorkflowPrimitives(t *testing.T) {
@@ -120,6 +137,10 @@ func TestServiceRunExecutesBaselineConditionWithoutWorkflowPrimitives(t *testing
 	if got := record.Telemetry.MeasurementStatus; got != "unavailable" {
 		t.Fatalf("measurement_status = %q, want unavailable for baseline runs without an outcome payload", got)
 	}
+	if got := record.BaselinePromptMetadataRef; got != "artifacts/baseline-prompt-metadata.json" {
+		t.Fatalf("baseline_prompt_metadata_ref = %q, want baseline prompt metadata ref", got)
+	}
+	assertExists(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", result.RunID, record.BaselinePromptMetadataRef))
 }
 
 func TestServiceRunPersistsMeasuredTelemetryFromOutcomePayload(t *testing.T) {
@@ -393,6 +414,7 @@ type stubWorkflowRunner struct {
 	startCalls     []string
 	finishPayloads []string
 	onStart        func()
+	startResult    workflow.StartResult
 }
 
 type stubCopilotUsageCollector struct {
@@ -405,7 +427,7 @@ func (s *stubWorkflowRunner) Start(_ context.Context, _ string, task string, _ i
 		s.onStart()
 	}
 	s.startCalls = append(s.startCalls, task)
-	return workflow.StartResult{}, nil
+	return s.startResult, nil
 }
 
 func (s *stubWorkflowRunner) Finish(_ context.Context, _ string, input string) (workflow.FinishResult, error) {

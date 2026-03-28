@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guillaume-galp/cge/internal/app/workflow"
 	"github.com/guillaume-galp/cge/internal/infra/repo"
 )
 
@@ -260,20 +261,92 @@ func TestServiceReportSupportsFocusedRunSelection(t *testing.T) {
 	}
 }
 
+func TestServiceReportBuildsVerificationAttributionAndGate(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager := initLabRepo(t)
+	service := NewService(manager)
+	if _, err := service.Init(context.Background(), repoDir); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	writeReportSuiteFixture(t, repoDir)
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "verification-graph-1",
+		TaskID:          "task-001",
+		ConditionID:     "with-graph",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            1,
+		TotalTokens:     100,
+		WallClock:       10,
+		Success:         true,
+		Quality:         0.90,
+		Resumability:    0.80,
+		WorkflowStart: &workflow.StartResult{
+			Kickoff: workflow.KickoffEnvelope{
+				Task: workflow.KickoffTaskDetails{
+					Family:     workflow.KickoffFamilyVerificationAudit,
+					Subprofile: workflow.KickoffVerificationProfileWorkflow,
+				},
+				Advisory: workflow.KickoffAdvisoryState{
+					EffectiveMode:   workflow.KickoffModeMinimal,
+					ConfidenceScore: 0.76,
+				},
+			},
+		},
+	})
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:                  "verification-base-1",
+		TaskID:                 "task-001",
+		ConditionID:            "without-graph",
+		Model:                  "model-a",
+		SessionTopology:        "delegated-parallel",
+		Seed:                   1,
+		TotalTokens:            120,
+		WallClock:              12,
+		Success:                true,
+		Quality:                0.88,
+		Resumability:           0.78,
+		BaselinePromptMetadata: map[string]any{"task_word_count": 4, "graph_backed": false},
+	})
+
+	result, err := service.Report(context.Background(), repoDir, ReportRequest{})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	if len(result.Report.VerificationAttribution.Profiles) != 1 {
+		t.Fatalf("verification profiles = %#v, want one profile summary", result.Report.VerificationAttribution.Profiles)
+	}
+	profile := result.Report.VerificationAttribution.Profiles[0]
+	if profile.Profile != workflow.KickoffVerificationProfileWorkflow {
+		t.Fatalf("profile = %q, want workflow verification", profile.Profile)
+	}
+	if profile.BaselinePromptMetadataPairs != 1 {
+		t.Fatalf("baseline_prompt_metadata_pairs = %d, want 1", profile.BaselinePromptMetadataPairs)
+	}
+	if result.Report.VerificationAttribution.Gate.Decision == "" {
+		t.Fatalf("verification gate = %#v, want explicit decision", result.Report.VerificationAttribution.Gate)
+	}
+}
+
 type reportFixtureRun struct {
-	RunID           string
-	TaskID          string
-	ConditionID     string
-	Model           string
-	SessionTopology string
-	Seed            int64
-	TotalTokens     int
-	WallClock       int
-	Success         bool
-	Quality         float64
-	Resumability    float64
-	WithoutEval     bool
-	IncompleteToken bool
+	RunID                  string
+	TaskID                 string
+	ConditionID            string
+	Model                  string
+	SessionTopology        string
+	Seed                   int64
+	TotalTokens            int
+	WallClock              int
+	Success                bool
+	Quality                float64
+	Resumability           float64
+	WithoutEval            bool
+	IncompleteToken        bool
+	WorkflowStart          *workflow.StartResult
+	BaselinePromptMetadata map[string]any
 }
 
 func writeReportSuiteFixture(t *testing.T, repoDir string) {
@@ -350,6 +423,14 @@ func writeReportRunFixture(t *testing.T, repoDir string, fixture reportFixtureRu
 		SessionStructureRef: "artifacts/sessions/",
 		WritebackOutputsRef: "artifacts/task-output.json",
 		OutcomeArtifactsRef: "artifacts/output/" + fixture.ConditionID + "/",
+	}
+	if fixture.WorkflowStart != nil {
+		record.WorkflowStartResponseRef = "artifacts/workflow-start-response.json"
+		writeJSONFixture(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", fixture.RunID, record.WorkflowStartResponseRef), fixture.WorkflowStart)
+	}
+	if fixture.BaselinePromptMetadata != nil {
+		record.BaselinePromptMetadataRef = "artifacts/baseline-prompt-metadata.json"
+		writeJSONFixture(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", fixture.RunID, record.BaselinePromptMetadataRef), fixture.BaselinePromptMetadata)
 	}
 	if fixture.IncompleteToken {
 		record.Telemetry.MeasurementStatus = "partial"

@@ -2,6 +2,7 @@ package lab
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/guillaume-galp/cge/internal/app/cmdsupport"
+	"github.com/guillaume-galp/cge/internal/app/workflow"
 	"github.com/guillaume-galp/cge/internal/infra/repo"
 )
 
@@ -35,20 +37,45 @@ type ReportResult struct {
 }
 
 type ReportArtifact struct {
-	SchemaVersion      string              `json:"schema_version"`
-	ReportID           string              `json:"report_id"`
-	GeneratedAt        string              `json:"generated_at"`
-	SuiteID            string              `json:"suite_id"`
-	Selection          ReportSelection     `json:"selection"`
-	SourceArtifacts    ReportSourceSummary `json:"source_artifacts"`
-	RunsIncluded       int                 `json:"runs_included"`
-	RunsScored         int                 `json:"runs_scored"`
-	RunsUnscored       int                 `json:"runs_unscored"`
-	UnscoredRunIDs     []string            `json:"unscored_run_ids"`
-	PairedComparisons  []PairedComparison  `json:"paired_comparisons"`
-	GroupedComparisons []GroupedComparison `json:"grouped_comparisons"`
-	Summary            ReportSummary       `json:"summary"`
-	Limitations        []string            `json:"limitations"`
+	SchemaVersion           string                         `json:"schema_version"`
+	ReportID                string                         `json:"report_id"`
+	GeneratedAt             string                         `json:"generated_at"`
+	SuiteID                 string                         `json:"suite_id"`
+	Selection               ReportSelection                `json:"selection"`
+	SourceArtifacts         ReportSourceSummary            `json:"source_artifacts"`
+	RunsIncluded            int                            `json:"runs_included"`
+	RunsScored              int                            `json:"runs_scored"`
+	RunsUnscored            int                            `json:"runs_unscored"`
+	UnscoredRunIDs          []string                       `json:"unscored_run_ids"`
+	PairedComparisons       []PairedComparison             `json:"paired_comparisons"`
+	GroupedComparisons      []GroupedComparison            `json:"grouped_comparisons"`
+	VerificationAttribution VerificationAttributionSummary `json:"verification_attribution"`
+	Summary                 ReportSummary                  `json:"summary"`
+	Limitations             []string                       `json:"limitations"`
+}
+
+type VerificationAttributionSummary struct {
+	Profiles []VerificationProfileSummary `json:"profiles,omitempty"`
+	Gate     VerificationRerunGate        `json:"gate"`
+}
+
+type VerificationProfileSummary struct {
+	Profile                     string         `json:"profile"`
+	PairCount                   int            `json:"pair_count"`
+	TokenSampleCount            int            `json:"token_sample_count"`
+	QualitySampleCount          int            `json:"quality_sample_count"`
+	EffectiveModes              map[string]int `json:"effective_modes"`
+	AbstentionRate              float64        `json:"abstention_rate"`
+	MeanConfidence              float64        `json:"mean_confidence"`
+	MeanTokenDelta              float64        `json:"mean_token_delta"`
+	MeanQualityDelta            float64        `json:"mean_quality_delta"`
+	BaselinePromptMetadataPairs int            `json:"baseline_prompt_metadata_pairs"`
+}
+
+type VerificationRerunGate struct {
+	Decision string   `json:"decision"`
+	Rule     string   `json:"rule"`
+	Reasons  []string `json:"reasons,omitempty"`
 }
 
 type ReportSelection struct {
@@ -156,12 +183,14 @@ type ReportFinding struct {
 }
 
 type reportRun struct {
-	record           RunRecord
-	task             SuiteTask
-	condition        Condition
-	path             string
-	latestEvaluation *EvaluationRecord
-	evaluationCount  int
+	record                 RunRecord
+	task                   SuiteTask
+	condition              Condition
+	path                   string
+	latestEvaluation       *EvaluationRecord
+	evaluationCount        int
+	workflowStart          *workflow.StartResult
+	baselinePromptMetadata map[string]any
 }
 
 type pairKey struct {
@@ -195,6 +224,16 @@ type groupAccumulator struct {
 	taskFamily string
 	groupValue string
 	metrics    map[string][]pairedMetricValue
+}
+
+type verificationObservation struct {
+	profile                       string
+	effectiveMode                 string
+	confidenceScore               float64
+	abstained                     bool
+	tokenDelta                    *float64
+	qualityDelta                  *float64
+	baselinePromptMetadataPresent bool
 }
 
 func (s *Service) Report(ctx context.Context, startDir string, request ReportRequest) (ReportResult, error) {
@@ -300,8 +339,9 @@ func buildReportArtifact(
 	selectedRuns []reportRun,
 	batchPlans []BatchPlanSource,
 ) ReportArtifact {
-	pairedComparisons, pairObservations, unscoredRunIDs := buildPairedComparisons(selectedRuns)
+	pairedComparisons, pairObservations, verificationObservations, unscoredRunIDs := buildPairedComparisons(selectedRuns)
 	groupedComparisons := buildGroupedComparisons(pairObservations)
+	verificationAttribution := buildVerificationAttribution(verificationObservations)
 	sort.Strings(unscoredRunIDs)
 
 	warnings := []ReportWarning{}
@@ -356,12 +396,13 @@ func buildReportArtifact(
 			EvaluationArtifactCount: countEvaluationArtifacts(allRuns),
 			BatchPlans:              batchPlans,
 		},
-		RunsIncluded:       len(selectedRuns),
-		RunsScored:         runsScored,
-		RunsUnscored:       len(selectedRuns) - runsScored,
-		UnscoredRunIDs:     unscoredRunIDs,
-		PairedComparisons:  pairedComparisons,
-		GroupedComparisons: groupedComparisons,
+		RunsIncluded:            len(selectedRuns),
+		RunsScored:              runsScored,
+		RunsUnscored:            len(selectedRuns) - runsScored,
+		UnscoredRunIDs:          unscoredRunIDs,
+		PairedComparisons:       pairedComparisons,
+		GroupedComparisons:      groupedComparisons,
+		VerificationAttribution: verificationAttribution,
 		Summary: ReportSummary{
 			Warnings:        warnings,
 			NullResults:     collectFindings(pairedComparisons, groupedComparisons, true),
@@ -371,7 +412,7 @@ func buildReportArtifact(
 	}
 }
 
-func buildPairedComparisons(selectedRuns []reportRun) ([]PairedComparison, []pairObservation, []string) {
+func buildPairedComparisons(selectedRuns []reportRun) ([]PairedComparison, []pairObservation, []verificationObservation, []string) {
 	buckets := map[pairKey]*pairBucket{}
 	unscoredSet := map[string]struct{}{}
 
@@ -420,6 +461,7 @@ func buildPairedComparisons(selectedRuns []reportRun) ([]PairedComparison, []pai
 
 	comparisons := make([]PairedComparison, 0, len(keys))
 	observations := []pairObservation{}
+	verificationObservations := []verificationObservation{}
 	for _, key := range keys {
 		bucket := buckets[key]
 		sortReportRuns(bucket.graphRuns)
@@ -472,6 +514,9 @@ func buildPairedComparisons(selectedRuns []reportRun) ([]PairedComparison, []pai
 					sessionTopology: key.sessionTopology,
 					metrics:         pairMetricValues(*graphRun, *baseRun),
 				})
+				if verificationObservation, ok := buildVerificationObservation(*graphRun, *baseRun); ok {
+					verificationObservations = append(verificationObservations, verificationObservation)
+				}
 			}
 
 			if pair.IncompleteReason != "" {
@@ -510,7 +555,7 @@ func buildPairedComparisons(selectedRuns []reportRun) ([]PairedComparison, []pai
 		unscoredRunIDs = append(unscoredRunIDs, runID)
 	}
 
-	return comparisons, observations, unscoredRunIDs
+	return comparisons, observations, verificationObservations, unscoredRunIDs
 }
 
 func buildGroupedComparisons(observations []pairObservation) []GroupedComparison {
@@ -621,19 +666,73 @@ func loadReportRuns(runsPath string, suite SuiteManifest, conditions ConditionsM
 		if err != nil {
 			return nil, err
 		}
+		workflowStartPath := ""
+		if record.WorkflowStartResponseRef != "" {
+			workflowStartPath = filepath.Join(filepath.Dir(path), record.WorkflowStartResponseRef)
+		}
+		workflowStart, err := loadWorkflowStartArtifact(workflowStartPath)
+		if err != nil {
+			return nil, err
+		}
+		baselinePromptPath := ""
+		if record.BaselinePromptMetadataRef != "" {
+			baselinePromptPath = filepath.Join(filepath.Dir(path), record.BaselinePromptMetadataRef)
+		}
+		baselinePromptMetadata, err := loadGenericArtifact(baselinePromptPath)
+		if err != nil {
+			return nil, err
+		}
 
 		items = append(items, reportRun{
-			record:           record,
-			task:             task,
-			condition:        condition,
-			path:             path,
-			latestEvaluation: evaluation,
-			evaluationCount:  count,
+			record:                 record,
+			task:                   task,
+			condition:              condition,
+			path:                   path,
+			latestEvaluation:       evaluation,
+			evaluationCount:        count,
+			workflowStart:          workflowStart,
+			baselinePromptMetadata: baselinePromptMetadata,
 		})
 	}
 
 	sortReportRuns(items)
 	return items, nil
+}
+
+func loadWorkflowStartArtifact(path string) (*workflow.StartResult, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read workflow start artifact %s: %w", path, err)
+	}
+	var result workflow.StartResult
+	if err := json.Unmarshal(data, &result); err != nil {
+		return nil, fmt.Errorf("decode workflow start artifact %s: %w", path, err)
+	}
+	return &result, nil
+}
+
+func loadGenericArtifact(path string) (map[string]any, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read artifact %s: %w", path, err)
+	}
+	payload := map[string]any{}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, fmt.Errorf("decode artifact %s: %w", path, err)
+	}
+	return payload, nil
 }
 
 func listRunRecordPaths(runsPath string) ([]string, error) {
@@ -1141,4 +1240,193 @@ func countTokenSparseComparisons(comparisons []PairedComparison) int {
 		}
 	}
 	return count
+}
+
+func buildVerificationObservation(graphRun, baseRun reportRun) (verificationObservation, bool) {
+	if graphRun.workflowStart == nil {
+		return verificationObservation{}, false
+	}
+	if graphRun.workflowStart.Kickoff.Task.Family != workflow.KickoffFamilyVerificationAudit {
+		return verificationObservation{}, false
+	}
+	profile := strings.TrimSpace(graphRun.workflowStart.Kickoff.Task.Subprofile)
+	if profile == "" {
+		profile = strings.TrimSpace(graphRun.workflowStart.Kickoff.Policy.Subprofile)
+	}
+	if profile == "" {
+		profile = "unspecified"
+	}
+	observation := verificationObservation{
+		profile:                       profile,
+		effectiveMode:                 graphRun.workflowStart.Kickoff.Advisory.EffectiveMode,
+		confidenceScore:               graphRun.workflowStart.Kickoff.Advisory.ConfidenceScore,
+		abstained:                     graphRun.workflowStart.Kickoff.Context.Abstained,
+		baselinePromptMetadataPresent: len(baseRun.baselinePromptMetadata) > 0,
+	}
+	if tokenDelta, ok := pairedComparableTokenDelta(graphRun.record.Telemetry, baseRun.record.Telemetry); ok {
+		observation.tokenDelta = &tokenDelta
+	}
+	if qualityDelta, ok := pairedQualityDelta(graphRun.latestEvaluation, baseRun.latestEvaluation); ok {
+		observation.qualityDelta = &qualityDelta
+	}
+	return observation, true
+}
+
+func pairedComparableTokenDelta(graphTelemetry, baseTelemetry *RunTelemetry) (float64, bool) {
+	graphTotal, graphOK := comparableTokenMetric(graphTelemetry, func(t *RunTelemetry) *int { return t.TotalTokens })
+	baseTotal, baseOK := comparableTokenMetric(baseTelemetry, func(t *RunTelemetry) *int { return t.TotalTokens })
+	if !graphOK || !baseOK {
+		return 0, false
+	}
+	return graphTotal - baseTotal, true
+}
+
+func pairedQualityDelta(graphEvaluation, baseEvaluation *EvaluationRecord) (float64, bool) {
+	if graphEvaluation == nil || baseEvaluation == nil || graphEvaluation.Scores == nil || baseEvaluation.Scores == nil {
+		return 0, false
+	}
+	if graphEvaluation.Scores.QualityScore == nil || baseEvaluation.Scores.QualityScore == nil {
+		return 0, false
+	}
+	return *graphEvaluation.Scores.QualityScore - *baseEvaluation.Scores.QualityScore, true
+}
+
+func buildVerificationAttribution(observations []verificationObservation) VerificationAttributionSummary {
+	if len(observations) == 0 {
+		return VerificationAttributionSummary{
+			Gate: VerificationRerunGate{
+				Decision: "not_applicable",
+				Rule:     "A verification rerun gate is only computed when selected runs include verification-family kickoff artifacts.",
+			},
+		}
+	}
+
+	grouped := map[string][]verificationObservation{}
+	for _, observation := range observations {
+		grouped[observation.profile] = append(grouped[observation.profile], observation)
+	}
+	profiles := make([]string, 0, len(grouped))
+	for profile := range grouped {
+		profiles = append(profiles, profile)
+	}
+	sort.Strings(profiles)
+
+	summaries := make([]VerificationProfileSummary, 0, len(profiles))
+	for _, profile := range profiles {
+		items := grouped[profile]
+		effectiveModes := map[string]int{}
+		confidenceTotal := 0.0
+		abstainedCount := 0
+		tokenDeltas := []float64{}
+		qualityDeltas := []float64{}
+		baselinePromptMetadataPairs := 0
+		for _, item := range items {
+			effectiveModes[item.effectiveMode]++
+			confidenceTotal += item.confidenceScore
+			if item.abstained {
+				abstainedCount++
+			}
+			if item.tokenDelta != nil {
+				tokenDeltas = append(tokenDeltas, *item.tokenDelta)
+			}
+			if item.qualityDelta != nil {
+				qualityDeltas = append(qualityDeltas, *item.qualityDelta)
+			}
+			if item.baselinePromptMetadataPresent {
+				baselinePromptMetadataPairs++
+			}
+		}
+		summaries = append(summaries, VerificationProfileSummary{
+			Profile:                     profile,
+			PairCount:                   len(items),
+			TokenSampleCount:            len(tokenDeltas),
+			QualitySampleCount:          len(qualityDeltas),
+			EffectiveModes:              effectiveModes,
+			AbstentionRate:              meanFloat64FromObservations(float64(abstainedCount), len(items)),
+			MeanConfidence:              meanFloat64FromObservations(confidenceTotal, len(items)),
+			MeanTokenDelta:              meanFloat64(tokenDeltas),
+			MeanQualityDelta:            meanFloat64(qualityDeltas),
+			BaselinePromptMetadataPairs: baselinePromptMetadataPairs,
+		})
+	}
+	return VerificationAttributionSummary{
+		Profiles: summaries,
+		Gate:     buildVerificationGate(summaries),
+	}
+}
+
+func meanFloat64FromObservations(total float64, count int) float64 {
+	if count == 0 {
+		return 0
+	}
+	return total / float64(count)
+}
+
+func buildVerificationGate(summaries []VerificationProfileSummary) VerificationRerunGate {
+	rule := "Proceed only when verification profiles have comparable token telemetry, remain roughly neutral on token delta, and do not show quality regression."
+	if len(summaries) == 0 {
+		return VerificationRerunGate{Decision: "not_applicable", Rule: rule}
+	}
+
+	reasons := []string{}
+	overallTokenDeltas := []float64{}
+	hasIncompleteMetrics := false
+	hasPositiveTokenRegression := false
+	hasCatastrophicRegression := false
+	hasQualityRegression := false
+	for _, summary := range summaries {
+		if summary.TokenSampleCount == 0 || summary.QualitySampleCount == 0 {
+			hasIncompleteMetrics = true
+			reasons = append(reasons, fmt.Sprintf("profile %s lacks comparable token or quality samples", summary.Profile))
+			continue
+		}
+		overallTokenDeltas = append(overallTokenDeltas, summary.MeanTokenDelta)
+		if summary.MeanTokenDelta > 25000 {
+			hasPositiveTokenRegression = true
+			reasons = append(reasons, fmt.Sprintf("profile %s still shows a positive token delta of %.0f", summary.Profile, summary.MeanTokenDelta))
+		}
+		if summary.MeanTokenDelta > 100000 || summary.MeanQualityDelta < -0.10 {
+			hasCatastrophicRegression = true
+			reasons = append(reasons, fmt.Sprintf("profile %s remains materially regressed", summary.Profile))
+		}
+		if summary.MeanQualityDelta < 0 {
+			hasQualityRegression = true
+			reasons = append(reasons, fmt.Sprintf("profile %s still loses quality versus baseline", summary.Profile))
+		}
+	}
+
+	switch {
+	case hasCatastrophicRegression:
+		return VerificationRerunGate{Decision: "stop-and-recalibrate", Rule: rule, Reasons: dedupeReportStrings(reasons)}
+	case hasIncompleteMetrics:
+		return VerificationRerunGate{Decision: "hold", Rule: rule, Reasons: dedupeReportStrings(reasons)}
+	case meanFloat64(overallTokenDeltas) <= 25000 && !hasPositiveTokenRegression && !hasQualityRegression:
+		return VerificationRerunGate{
+			Decision: "proceed",
+			Rule:     rule,
+			Reasons:  []string{"Verification profiles stayed roughly neutral on token delta and did not regress quality."},
+		}
+	default:
+		return VerificationRerunGate{Decision: "hold", Rule: rule, Reasons: dedupeReportStrings(reasons)}
+	}
+}
+
+func dedupeReportStrings(values []string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	deduped := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		deduped = append(deduped, value)
+	}
+	return deduped
 }

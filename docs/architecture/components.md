@@ -1,4 +1,4 @@
-# Components — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP5 + VP6
+# Components — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP5 + VP6 + VP7
 
 ## Component Map
 
@@ -47,7 +47,8 @@
 - **Responsibility**: Combine structural graph retrieval and text-relevance
   retrieval into ranked task candidates under a task-family retrieval policy.
 - **Interface**: query(task, policy), context(task, tokenBudget, policy), explain(task)
-- **Data ownership**: ranking logic, retrieval traces, and policy-filtered candidate sets
+- **Data ownership**: ranking logic, retrieval traces, and policy-filtered
+  candidate sets, including verification-profile-aware candidate suppression
 - **Dependencies**: Kuzu Store, Text Index
 
 ### 7. Context Projector
@@ -101,8 +102,10 @@
   existing graph primitives.
 - **Interface**: `workflowInit()`, `workflowStart(task, kickoffMode)`, `workflowFinish(outcome)`
 - **Data ownership**: kickoff family classification, policy selection,
-  confidence/abstention rules, kickoff and handoff envelope assembly rules,
-  workflow recommendations, and delegated-task orchestration logic
+  verification sub-profile routing, confidence/abstention rules,
+  verification-specific downgrade and token-budget decisions, kickoff and
+  handoff envelope assembly rules, workflow recommendations, and delegated-task
+  orchestration logic
 - **Dependencies**: Workflow Asset Manager, Graph Repository Manager, Retrieval
   Engine, Context Projector, Stats Service, Hygiene Service, Explain / Diff
   Service, Kuzu Store
@@ -124,7 +127,8 @@
   randomization, and delegate to the report generator for aggregate analysis.
 - **Interface**: `labInit()`, `labRun(runRequest)`, `labReport(reportRequest)`
 - **Data ownership**: suite manifest, condition definitions, batch lifecycle
-  state, and randomization/counterbalancing logic
+  state, randomization/counterbalancing logic, and verification-rerun
+  attribution planning
 - **Dependencies**: Delegation Workflow Service, Benchmark Evaluation Service,
   Run Ledger, Evaluation Service, Report Generator, Graph Repository Manager
 
@@ -134,7 +138,8 @@
   for every controlled experiment run.
 - **Interface**: `writeRun(record)`, `loadRun(runId)`, `listRuns(filter)`
 - **Data ownership**: run records under `.graph/lab/runs/`, run record schema
-  version
+  version, preserved raw kickoff responses, and baseline prompt-surface
+  metadata
 - **Dependencies**: local filesystem
 
 ### 16. Evaluation Service
@@ -167,6 +172,8 @@
 - Context shaping is separated from retrieval so token policies remain explicit.
 - Workflow kickoff policy is separated from raw retrieval ranking so the system
   can abstain when precision is low or the task family is known to regress.
+- Verification and audit tasks may be split into narrower sub-profiles with
+  stricter token budgets and downgrade rules than other families.
 - Stats are derived on demand from the graph system of record.
 - Hygiene suggestions are advisory until an explicit apply workflow is invoked.
 - The Delegation Workflow Service composes existing primitives; it does not
@@ -175,6 +182,9 @@
   workflow commands.
 - Reporting and synthesis tasks may intentionally receive no kickoff context by
   default when the selected policy says abstention is safer than injection.
+- Verification-focused experiment runs must preserve enough kickoff and baseline
+  prompt metadata to diagnose why a pair injected, minimized, abstained, won, or
+  regressed.
 - Benchmark reports are evaluation artifacts, not the graph system of record.
 - Experiment run records are immutable once written; evaluation is stored
   separately to preserve the execution/judgment boundary.

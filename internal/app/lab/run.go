@@ -104,10 +104,12 @@ type BatchPlanEntry struct {
 }
 
 type runArtifacts struct {
-	KickoffInputs    any
-	SessionStructure any
-	WritebackOutputs any
-	OutcomeSummary   any
+	KickoffInputs          any
+	WorkflowStartResponse  any
+	BaselinePromptMetadata any
+	SessionStructure       any
+	WritebackOutputs       any
+	OutcomeSummary         any
 }
 
 type resolvedRunRequest struct {
@@ -255,6 +257,7 @@ func (s *Service) runSingle(ctx context.Context, startDir string, workspace repo
 		GraphBacked:  condition.WorkflowMode == WorkflowModeGraphBacked,
 	}
 	var executionTelemetry *workflow.ExecutionTelemetry
+	var startResult *workflow.StartResult
 	payload := request.OutcomePayload
 	if request.CopilotSessionID != "" {
 		var err error
@@ -265,10 +268,11 @@ func (s *Service) runSingle(ctx context.Context, startDir string, workspace repo
 	}
 
 	if execution.GraphBacked {
-		_, err := s.workflowRunner.Start(ctx, startDir, task.Description, defaultKickoffMaxTokens)
+		start, err := s.workflowRunner.Start(ctx, startDir, task.Description, defaultKickoffMaxTokens)
 		if err != nil {
 			return RunResult{}, err
 		}
+		startResult = &start
 		execution.KickoffUsed = true
 
 		if payload == "" {
@@ -293,12 +297,12 @@ func (s *Service) runSingle(ctx context.Context, startDir string, workspace repo
 	finishedAt := s.now().UTC()
 	telemetry := buildRunTelemetry(execution, executionTelemetry, elapsedWallClockSeconds(startedAt, finishedAt), payload != "")
 
-	record := buildRunRecord(runID, request, condition, startedAt, finishedAt, telemetry)
+	record := buildRunRecord(runID, request, condition, execution, startedAt, finishedAt, telemetry)
 	runsPath := filepath.Join(workspace.WorkspacePath, repo.LabDirName, "runs")
 	if err := validateRunRecord(runsPath, SuiteManifest{Tasks: []SuiteTask{task}}, ConditionsManifest{Conditions: []Condition{condition}}, record); err != nil {
 		return RunResult{}, err
 	}
-	recordPath, err := persistRunLedger(workspace, record, buildRunArtifacts(task, request, condition, startedAt, finishedAt, execution))
+	recordPath, err := persistRunLedger(workspace, record, buildRunArtifacts(task, request, condition, startedAt, finishedAt, execution, startResult))
 	if err != nil {
 		return RunResult{}, err
 	}
@@ -636,6 +640,7 @@ func buildRunRecord(
 	runID string,
 	request RunRequest,
 	condition Condition,
+	execution RunExecution,
 	startedAt, finishedAt time.Time,
 	telemetry *RunTelemetry,
 ) RunRecord {
@@ -648,21 +653,23 @@ func buildRunRecord(
 	seed := request.Seed
 
 	return RunRecord{
-		SchemaVersion:       SchemaVersion,
-		RunID:               runID,
-		TaskID:              request.TaskID,
-		ConditionID:         request.ConditionID,
-		Model:               request.Model,
-		SessionTopology:     request.SessionTopology,
-		Seed:                &seed,
-		PromptVariant:       defaultPromptVariant,
-		StartedAt:           startedAt.UTC().Format(time.RFC3339),
-		FinishedAt:          finishedAt.UTC().Format(time.RFC3339),
-		Telemetry:           telemetry,
-		KickoffInputsRef:    kickoffRef,
-		SessionStructureRef: "artifacts/sessions/",
-		WritebackOutputsRef: writebackRef,
-		OutcomeArtifactsRef: fmt.Sprintf("artifacts/output/%s/", condition.ConditionID),
+		SchemaVersion:             SchemaVersion,
+		RunID:                     runID,
+		TaskID:                    request.TaskID,
+		ConditionID:               request.ConditionID,
+		Model:                     request.Model,
+		SessionTopology:           request.SessionTopology,
+		Seed:                      &seed,
+		PromptVariant:             defaultPromptVariant,
+		StartedAt:                 startedAt.UTC().Format(time.RFC3339),
+		FinishedAt:                finishedAt.UTC().Format(time.RFC3339),
+		Telemetry:                 telemetry,
+		KickoffInputsRef:          kickoffRef,
+		WorkflowStartResponseRef:  workflowStartArtifactRef(execution),
+		BaselinePromptMetadataRef: baselinePromptArtifactRef(execution),
+		SessionStructureRef:       "artifacts/sessions/",
+		WritebackOutputsRef:       writebackRef,
+		OutcomeArtifactsRef:       fmt.Sprintf("artifacts/output/%s/", condition.ConditionID),
 	}
 }
 
@@ -732,6 +739,7 @@ func buildRunArtifacts(
 	condition Condition,
 	startedAt, finishedAt time.Time,
 	execution RunExecution,
+	startResult *workflow.StartResult,
 ) runArtifacts {
 	sessionStructure := map[string]any{
 		"session_topology": execution.WorkflowMode,
@@ -755,7 +763,9 @@ func buildRunArtifacts(
 			"session_topology": request.SessionTopology,
 			"seed":             request.Seed,
 		},
-		SessionStructure: sessionStructure,
+		WorkflowStartResponse:  startResult,
+		BaselinePromptMetadata: buildBaselinePromptMetadata(task, request, condition, execution),
+		SessionStructure:       sessionStructure,
 		WritebackOutputs: map[string]any{
 			"summary":      fmt.Sprintf("Completed controlled run for %s", task.TaskID),
 			"finished_at":  finishedAt.UTC().Format(time.RFC3339),
@@ -793,6 +803,16 @@ func persistRunLedger(workspace repo.Workspace, record RunRecord, artifacts runA
 
 	if err := writeLedgerJSON(filepath.Join(runDir, record.KickoffInputsRef), artifacts.KickoffInputs); err != nil {
 		return "", err
+	}
+	if record.WorkflowStartResponseRef != "" && artifacts.WorkflowStartResponse != nil {
+		if err := writeLedgerJSON(filepath.Join(runDir, record.WorkflowStartResponseRef), artifacts.WorkflowStartResponse); err != nil {
+			return "", err
+		}
+	}
+	if record.BaselinePromptMetadataRef != "" && artifacts.BaselinePromptMetadata != nil {
+		if err := writeLedgerJSON(filepath.Join(runDir, record.BaselinePromptMetadataRef), artifacts.BaselinePromptMetadata); err != nil {
+			return "", err
+		}
 	}
 	if err := writeLedgerJSON(filepath.Join(runDir, filepath.Clean(record.SessionStructureRef), "summary.json"), artifacts.SessionStructure); err != nil {
 		return "", err
@@ -863,4 +883,39 @@ func intPointer(value int) *int {
 
 func boolPointer(value bool) *bool {
 	return &value
+}
+
+func workflowStartArtifactRef(execution RunExecution) string {
+	if execution.GraphBacked && execution.KickoffUsed {
+		return "artifacts/workflow-start-response.json"
+	}
+	return ""
+}
+
+func baselinePromptArtifactRef(execution RunExecution) string {
+	if !execution.GraphBacked {
+		return "artifacts/baseline-prompt-metadata.json"
+	}
+	return ""
+}
+
+func buildBaselinePromptMetadata(task SuiteTask, request RunRequest, condition Condition, execution RunExecution) any {
+	if execution.GraphBacked {
+		return nil
+	}
+	description := strings.TrimSpace(task.Description)
+	return map[string]any{
+		"task_id":             task.TaskID,
+		"task":                description,
+		"task_char_count":     len(description),
+		"task_word_count":     len(strings.Fields(description)),
+		"condition_id":        condition.ConditionID,
+		"workflow_mode":       condition.WorkflowMode,
+		"graph_backed":        false,
+		"prompt_variant":      defaultPromptVariant,
+		"model":               request.Model,
+		"session_topology":    request.SessionTopology,
+		"seed":                request.Seed,
+		"evidence_file_count": 0,
+	}
 }

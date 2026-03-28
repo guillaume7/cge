@@ -38,15 +38,25 @@ const (
 	KickoffModeMinimal = "minimal"
 	KickoffModeAbstain = "abstain"
 	KickoffModeAuto    = "auto"
+
+	KickoffVerificationProfileStats    = "stats_audit"
+	KickoffVerificationProfileWorkflow = "workflow_verification"
+	KickoffVerificationProfileGeneral  = "general_verification"
 )
 
 var (
-	writeProducingKeywords  = []string{"implement", "add ", "build", "create", "write", "modify", "refactor", "ship"}
-	troubleshootingKeywords = []string{"diagnose", "debug", "troubleshoot", "investigate", "broken", "failing", "failure", "error"}
-	verificationKeywords    = []string{"audit", "verify", "validation", "validate", "check", "inspect", "review", "snapshot"}
-	reportingKeywords       = []string{"report", "summarize", "summary", "synthesis", "synthesize", "debrief", "writeup", "analysis"}
-	workflowKeywords        = []string{"workflow", "handoff", "delegated", "delegate", "bootstrap"}
-	graphHygieneKeywords    = []string{"hygiene", "contradiction", "contradictory", "duplicate", "duplication", "orphan", "graph stats", "health indicator", "graph health"}
+	writeProducingKeywords    = []string{"implement", "add ", "build", "create", "write", "modify", "refactor", "ship"}
+	troubleshootingKeywords   = []string{"diagnose", "debug", "troubleshoot", "investigate", "broken", "failing", "failure", "error"}
+	verificationKeywords      = []string{"audit", "verify", "validation", "validate", "check", "inspect", "review", "snapshot", "provenance", "evidence"}
+	verificationStatsKeywords = []string{
+		"graph stats", "stats", "snapshot", "health indicator", "graph health",
+		"count", "counts", "density", "duplicate", "duplication", "orphan",
+		"contradiction", "contradictory",
+	}
+	verificationWorkflowKeywords = []string{"workflow", "kickoff", "handoff", "delegated", "delegate", "bootstrap", "finish"}
+	reportingKeywords            = []string{"report", "summarize", "summary", "synthesis", "synthesize", "debrief", "writeup", "analysis"}
+	workflowKeywords             = []string{"workflow", "handoff", "delegated", "delegate", "bootstrap"}
+	graphHygieneKeywords         = []string{"hygiene", "contradiction", "contradictory", "duplicate", "duplication", "orphan", "graph stats", "health indicator", "graph health"}
 )
 
 type ReadinessReader interface {
@@ -106,6 +116,7 @@ type KickoffTaskDetails struct {
 	Description string `json:"description"`
 	MaxTokens   int    `json:"max_tokens"`
 	Family      string `json:"family"`
+	Subprofile  string `json:"subprofile,omitempty"`
 }
 
 type KickoffGraphState struct {
@@ -123,20 +134,27 @@ type KickoffGraphState struct {
 }
 
 type KickoffPolicyState struct {
-	Family              string   `json:"family"`
-	AllowedEntityKinds  []string `json:"allowed_entity_kinds,omitempty"`
-	SuppressedPatterns  []string `json:"suppressed_patterns,omitempty"`
-	DefaultKickoffMode  string   `json:"default_kickoff_mode"`
-	ClassificationBasis []string `json:"classification_basis,omitempty"`
+	Family               string   `json:"family"`
+	Subprofile           string   `json:"subprofile,omitempty"`
+	AllowedEntityKinds   []string `json:"allowed_entity_kinds,omitempty"`
+	SuppressedPatterns   []string `json:"suppressed_patterns,omitempty"`
+	DefaultKickoffMode   string   `json:"default_kickoff_mode"`
+	AutoInjectThreshold  float64  `json:"auto_inject_threshold,omitempty"`
+	AutoMinimalThreshold float64  `json:"auto_minimal_threshold,omitempty"`
+	InjectTokenBudget    int      `json:"inject_token_budget,omitempty"`
+	MinimalTokenBudget   int      `json:"minimal_token_budget,omitempty"`
+	ClassificationBasis  []string `json:"classification_basis,omitempty"`
 }
 
 type KickoffAdvisoryState struct {
-	RequestedMode   string   `json:"requested_mode"`
-	EffectiveMode   string   `json:"effective_mode"`
-	ConfidenceLevel string   `json:"confidence_level"`
-	ConfidenceScore float64  `json:"confidence_score"`
-	ReasonCodes     []string `json:"reason_codes,omitempty"`
-	NextStep        string   `json:"next_step,omitempty"`
+	RequestedMode      string   `json:"requested_mode"`
+	EffectiveMode      string   `json:"effective_mode"`
+	ConfidenceLevel    string   `json:"confidence_level"`
+	ConfidenceScore    float64  `json:"confidence_score"`
+	EffectiveThreshold float64  `json:"effective_threshold,omitempty"`
+	TokenBudgetApplied int      `json:"token_budget_applied,omitempty"`
+	ReasonCodes        []string `json:"reason_codes,omitempty"`
+	NextStep           string   `json:"next_step,omitempty"`
 }
 
 type KickoffContext struct {
@@ -156,14 +174,21 @@ type DelegationBrief struct {
 
 type kickoffTaskFamily struct {
 	Name                string
+	Subprofile          string
 	ClassificationBasis []string
 }
 
 type kickoffPolicy struct {
-	Family             string
-	AllowedEntityKinds []string
-	SuppressedPatterns []string
-	DefaultKickoffMode string
+	Family               string
+	Subprofile           string
+	AllowedEntityKinds   []string
+	SuppressedPatterns   []string
+	DefaultKickoffMode   string
+	AutoInjectThreshold  float64
+	AutoMinimalThreshold float64
+	InjectTokenBudget    int
+	MinimalTokenBudget   int
+	LowConfidenceMode    string
 }
 
 type kickoffConfidenceAssessment struct {
@@ -199,8 +224,8 @@ func (s *Service) StartWithOptions(ctx context.Context, startDir, task string, m
 		if errors.Is(err, repo.ErrWorkspaceNotInitialized) {
 			result := bootstrapReadiness()
 			taskFamily := classifyKickoffTaskFamily(task)
-			policy := kickoffPolicyForFamily(taskFamily.Name)
-			advisory := determineKickoffAdvisory(taskFamily, policy, options.KickoffMode, kickoffConfidenceAssessment{Level: "none", Score: 0, ReasonCodes: []string{"workspace_not_initialized"}})
+			policy := kickoffPolicyForFamily(taskFamily)
+			advisory := determineKickoffAdvisory(taskFamily, policy, options.KickoffMode, kickoffConfidenceAssessment{Level: "none", Score: 0, ReasonCodes: []string{"workspace_not_initialized"}}, maxTokens)
 			result.Kickoff = buildKickoffEnvelope(task, maxTokens, result.Recommendation, result.Readiness, taskFamily, policy, advisory, retrieval.ResultSet{}, emptyKickoffContextEnvelope(maxTokens))
 			return result, nil
 		}
@@ -236,20 +261,22 @@ func (s *Service) StartWithOptions(ctx context.Context, startDir, task string, m
 	}
 	recommendation, reasons := recommendWorkflowStart(graphState)
 	taskFamily := classifyKickoffTaskFamily(task)
-	policy := kickoffPolicyForFamily(taskFamily.Name)
+	policy := kickoffPolicyForFamily(taskFamily)
 	readiness := ReadinessState{
 		Status:     readinessStatus(recommendation),
 		Reasons:    reasons,
 		GraphState: graphState,
 	}
 
+	rawResultSet := retrieval.ResultSet{Results: []retrieval.Result{}}
 	resultSet := retrieval.ResultSet{Results: []retrieval.Result{}}
 	contextEnvelope := emptyKickoffContextEnvelope(maxTokens)
 	if graphState.GraphAvailable && options.KickoffMode != KickoffModeAbstain && policy.DefaultKickoffMode != KickoffModeAbstain {
-		resultSet, err = s.querier.Query(ctx, workspace, task)
+		rawResultSet, err = s.querier.Query(ctx, workspace, task)
 		if err != nil {
 			return StartResult{}, classifyKickoffContextError("context_query", err)
 		}
+		resultSet = rawResultSet
 		resultSet = calibrateKickoffResultSet(taskFamily, policy, resultSet)
 		contextEnvelope, err = s.projector.Project(resultSet, maxTokens)
 		if err != nil {
@@ -261,8 +288,8 @@ func (s *Service) StartWithOptions(ctx context.Context, startDir, task string, m
 		}
 	}
 
-	confidence := assessKickoffConfidence(taskFamily, graphState, resultSet, contextEnvelope)
-	advisory := determineKickoffAdvisory(taskFamily, policy, options.KickoffMode, confidence)
+	confidence := assessKickoffConfidence(taskFamily, graphState, rawResultSet, resultSet, contextEnvelope)
+	advisory := determineKickoffAdvisory(taskFamily, policy, options.KickoffMode, confidence, maxTokens)
 	contextEnvelope = applyKickoffModeEnvelope(advisory, resultSet, contextEnvelope, maxTokens, s.projector)
 	if advisory.EffectiveMode == KickoffModeAbstain {
 		resultSet = retrieval.ResultSet{IndexStatus: resultSet.IndexStatus, Results: []retrieval.Result{}}
@@ -410,14 +437,20 @@ func buildKickoffEnvelope(task string, maxTokens int, recommendation string, rea
 			Description: strings.TrimSpace(task),
 			MaxTokens:   maxTokens,
 			Family:      taskFamily.Name,
+			Subprofile:  taskFamily.Subprofile,
 		},
 		GraphState: summarizeKickoffGraphState(readiness, recommendation),
 		Policy: KickoffPolicyState{
-			Family:              policy.Family,
-			AllowedEntityKinds:  append([]string(nil), policy.AllowedEntityKinds...),
-			SuppressedPatterns:  append([]string(nil), policy.SuppressedPatterns...),
-			DefaultKickoffMode:  policy.DefaultKickoffMode,
-			ClassificationBasis: append([]string(nil), taskFamily.ClassificationBasis...),
+			Family:               policy.Family,
+			Subprofile:           policy.Subprofile,
+			AllowedEntityKinds:   append([]string(nil), policy.AllowedEntityKinds...),
+			SuppressedPatterns:   append([]string(nil), policy.SuppressedPatterns...),
+			DefaultKickoffMode:   policy.DefaultKickoffMode,
+			AutoInjectThreshold:  policy.AutoInjectThreshold,
+			AutoMinimalThreshold: policy.AutoMinimalThreshold,
+			InjectTokenBudget:    policy.InjectTokenBudget,
+			MinimalTokenBudget:   policy.MinimalTokenBudget,
+			ClassificationBasis:  append([]string(nil), taskFamily.ClassificationBasis...),
 		},
 		Advisory: advisory,
 		Context:  contextState,
@@ -476,7 +509,7 @@ func buildKickoffContext(task string, maxTokens int, recommendation string, grap
 	}
 	if coverage == KickoffCoverageLowContext {
 		contextState.Summary = lowContextSummary(resultSet, contextEnvelope, graphState)
-		contextState.Guidance = lowContextGuidance(task, recommendation, graphState, resultSet, contextEnvelope, advisory)
+		contextState.Guidance = lowContextGuidance(task, recommendation, graphState, taskFamily, resultSet, contextEnvelope, advisory)
 		return contextState
 	}
 
@@ -491,6 +524,9 @@ func abstainedContextSummary(taskFamily kickoffTaskFamily, advisory KickoffAdvis
 	if containsReason(advisory.ReasonCodes, "low_confidence_abstain") {
 		return "Kickoff context abstained because the retrieved evidence did not meet the confidence threshold for this task family."
 	}
+	if containsReason(advisory.ReasonCodes, "verification_off_profile_contamination") {
+		return "Kickoff context abstained because the strongest available graph evidence was off-profile for this verification task, so the safer move is to pull graph evidence on demand."
+	}
 	if taskFamily.Name == KickoffFamilyReportingSynthesis {
 		return "This task family defaults to no kickoff context because reporting and synthesis work is currently more vulnerable to retrieval contamination than helped by pushed graph context."
 	}
@@ -503,6 +539,9 @@ func abstainedContextGuidance(taskFamily kickoffTaskFamily, advisory KickoffAdvi
 	}
 	if containsReason(advisory.ReasonCodes, "low_confidence_abstain") {
 		guidance = append(guidance, "Use `graph context` on demand once concrete task landmarks emerge, rather than trusting a weak kickoff brief.")
+	}
+	if taskFamily.Name == KickoffFamilyVerificationAudit {
+		guidance = append(guidance, "Pull graph evidence on demand only after you know which exact audit target must be verified.")
 	}
 	if taskFamily.Name == KickoffFamilyReportingSynthesis {
 		guidance = append(guidance, "Treat reporting and synthesis as an abstention-first family until future evidence justifies broader kickoff injection.")
@@ -537,7 +576,7 @@ func lowContextSummary(resultSet retrieval.ResultSet, contextEnvelope contextpro
 	}
 }
 
-func lowContextGuidance(task, recommendation string, graphState StartGraphState, resultSet retrieval.ResultSet, contextEnvelope contextprojector.Envelope, advisory KickoffAdvisoryState) []string {
+func lowContextGuidance(task, recommendation string, graphState StartGraphState, taskFamily kickoffTaskFamily, resultSet retrieval.ResultSet, contextEnvelope contextprojector.Envelope, advisory KickoffAdvisoryState) []string {
 	guidance := []string{}
 	switch {
 	case !graphState.WorkspaceInitialized:
@@ -555,6 +594,9 @@ func lowContextGuidance(task, recommendation string, graphState StartGraphState,
 	)
 	if containsReason(advisory.ReasonCodes, "minimal_kickoff_selected") || containsReason(advisory.ReasonCodes, "low_confidence_minimal") {
 		guidance = append(guidance, "Proceed with the reduced kickoff brief and pull more graph context only if the task proves to need it.")
+	}
+	if taskFamily.Name == KickoffFamilyVerificationAudit {
+		guidance = append(guidance, "Prefer targeted verification pulls over broad kickoff context for audit work.")
 	}
 	if recommendation == RecommendationInspectHygiene {
 		guidance = append(guidance, "Inspect graph hygiene before trusting ambiguous or duplicate-heavy context.")
@@ -613,7 +655,10 @@ func calibrateKickoffRecommendation(taskFamily kickoffTaskFamily, advisory Kicko
 	if recommendation != RecommendationInspectHygiene {
 		return recommendation, reasons
 	}
-	if taskFamily.Name == KickoffFamilyVerificationAudit || taskFamily.Name == KickoffFamilyWorkflowContext {
+	if taskFamily.Name == KickoffFamilyWorkflowContext {
+		return recommendation, reasons
+	}
+	if taskFamily.Name == KickoffFamilyVerificationAudit && taskFamily.Subprofile == KickoffVerificationProfileStats {
 		return recommendation, reasons
 	}
 	if !hasGroundedContext(resultSet, contextEnvelope) {
@@ -622,7 +667,7 @@ func calibrateKickoffRecommendation(taskFamily kickoffTaskFamily, advisory Kicko
 	return RecommendationProceed, []string{"task_specific_context_grounded", "graph_hygiene_advisory"}
 }
 
-func assessKickoffConfidence(taskFamily kickoffTaskFamily, graphState StartGraphState, resultSet retrieval.ResultSet, contextEnvelope contextprojector.Envelope) kickoffConfidenceAssessment {
+func assessKickoffConfidence(taskFamily kickoffTaskFamily, graphState StartGraphState, rawResultSet retrieval.ResultSet, resultSet retrieval.ResultSet, contextEnvelope contextprojector.Envelope) kickoffConfidenceAssessment {
 	reasons := make([]string, 0, 4)
 	if !graphState.GraphAvailable {
 		return kickoffConfidenceAssessment{Level: "none", Score: 0, ReasonCodes: []string{"graph_unavailable"}}
@@ -665,6 +710,17 @@ func assessKickoffConfidence(taskFamily kickoffTaskFamily, graphState StartGraph
 	if taskFamily.Name == KickoffFamilyAmbiguousTask {
 		score -= 0.15
 	}
+	if taskFamily.Name == KickoffFamilyVerificationAudit {
+		suppressedCount := len(rawResultSet.Results) - len(resultSet.Results)
+		if suppressedCount > 0 {
+			score -= 0.15
+			reasons = append(reasons, "verification_off_profile_contamination")
+		}
+		if len(resultSet.Results) == 0 {
+			score -= 0.10
+			reasons = append(reasons, "verification_sparse_aligned_evidence")
+		}
+	}
 	if score < 0 {
 		score = 0
 	}
@@ -682,7 +738,7 @@ func assessKickoffConfidence(taskFamily kickoffTaskFamily, graphState StartGraph
 	return kickoffConfidenceAssessment{Level: level, Score: score, ReasonCodes: dedupeStrings(reasons)}
 }
 
-func determineKickoffAdvisory(taskFamily kickoffTaskFamily, policy kickoffPolicy, requestedMode string, confidence kickoffConfidenceAssessment) KickoffAdvisoryState {
+func determineKickoffAdvisory(taskFamily kickoffTaskFamily, policy kickoffPolicy, requestedMode string, confidence kickoffConfidenceAssessment, maxTokens int) KickoffAdvisoryState {
 	requestedMode = strings.TrimSpace(requestedMode)
 	if requestedMode == "" {
 		requestedMode = KickoffModeAuto
@@ -694,6 +750,9 @@ func determineKickoffAdvisory(taskFamily kickoffTaskFamily, policy kickoffPolicy
 		ConfidenceLevel: confidence.Level,
 		ConfidenceScore: confidence.Score,
 		ReasonCodes:     append([]string(nil), confidence.ReasonCodes...),
+	}
+	if taskFamily.Name == KickoffFamilyVerificationAudit {
+		advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "verification_stricter_threshold")
 	}
 
 	switch requestedMode {
@@ -713,13 +772,13 @@ func determineKickoffAdvisory(taskFamily kickoffTaskFamily, policy kickoffPolicy
 		case policy.DefaultKickoffMode == KickoffModeAbstain:
 			advisory.EffectiveMode = KickoffModeAbstain
 			advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "family_policy_default_no_kickoff")
-		case confidence.Level == "high":
+		case confidence.Score >= policy.AutoInjectThreshold && policy.DefaultKickoffMode == KickoffModeInject:
 			advisory.EffectiveMode = KickoffModeInject
-		case confidence.Level == "medium":
+		case confidence.Score >= policy.AutoMinimalThreshold:
 			advisory.EffectiveMode = KickoffModeMinimal
 			advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "minimal_kickoff_selected")
 		default:
-			if taskFamily.Name == KickoffFamilyAmbiguousTask {
+			if policy.LowConfidenceMode == KickoffModeAbstain || taskFamily.Name == KickoffFamilyAmbiguousTask {
 				advisory.EffectiveMode = KickoffModeAbstain
 				advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "low_confidence_abstain")
 			} else {
@@ -727,6 +786,35 @@ func determineKickoffAdvisory(taskFamily kickoffTaskFamily, policy kickoffPolicy
 				advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "low_confidence_minimal")
 			}
 		}
+	}
+	if taskFamily.Name == KickoffFamilyVerificationAudit && containsReason(advisory.ReasonCodes, "verification_off_profile_contamination") {
+		switch taskFamily.Subprofile {
+		case KickoffVerificationProfileStats:
+			advisory.EffectiveMode = KickoffModeAbstain
+			advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "verification_contamination_abstain")
+		case KickoffVerificationProfileWorkflow:
+			if containsReason(advisory.ReasonCodes, "verification_sparse_aligned_evidence") {
+				advisory.EffectiveMode = KickoffModeAbstain
+				advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "verification_contamination_abstain")
+			} else {
+				advisory.EffectiveMode = KickoffModeMinimal
+				advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "verification_contamination_minimal")
+			}
+		default:
+			if containsReason(advisory.ReasonCodes, "verification_sparse_aligned_evidence") {
+				advisory.EffectiveMode = KickoffModeAbstain
+				advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "verification_contamination_abstain")
+			}
+		}
+	}
+	if taskFamily.Name == KickoffFamilyVerificationAudit && taskFamily.Subprofile == KickoffVerificationProfileStats && advisory.EffectiveMode == KickoffModeInject {
+		advisory.EffectiveMode = KickoffModeMinimal
+		advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "verification_stats_minimal_default")
+	}
+	advisory.EffectiveThreshold = advisoryThreshold(policy, advisory.EffectiveMode)
+	advisory.TokenBudgetApplied = kickoffBudgetForMode(policy, advisory.EffectiveMode, maxTokens)
+	if taskFamily.Name == KickoffFamilyVerificationAudit && advisory.TokenBudgetApplied > 0 && advisory.TokenBudgetApplied < maxTokens {
+		advisory.ReasonCodes = appendReason(advisory.ReasonCodes, "verification_token_budget_applied")
 	}
 
 	switch advisory.EffectiveMode {
@@ -737,6 +825,8 @@ func determineKickoffAdvisory(taskFamily kickoffTaskFamily, policy kickoffPolicy
 	default:
 		if containsReason(advisory.ReasonCodes, "explicit_no_kickoff_requested") {
 			advisory.NextStep = "proceed_with_fresh_context"
+		} else if taskFamily.Name == KickoffFamilyVerificationAudit {
+			advisory.NextStep = "pull_verification_context_on_demand"
 		} else {
 			advisory.NextStep = "pull_graph_on_demand"
 		}
@@ -749,25 +839,21 @@ func applyKickoffModeEnvelope(advisory KickoffAdvisoryState, resultSet retrieval
 	switch advisory.EffectiveMode {
 	case KickoffModeAbstain:
 		return emptyKickoffContextEnvelope(maxTokens)
-	case KickoffModeMinimal:
-		minimalBudget := maxTokens
-		if minimalBudget > 300 {
-			minimalBudget = 300
+	default:
+		budget := advisory.TokenBudgetApplied
+		if budget <= 0 {
+			budget = maxTokens
 		}
-		if minimalBudget <= 0 {
-			minimalBudget = maxTokens
-		}
-		if projector == nil {
+		if budget == contextEnvelope.MaxTokens || projector == nil {
+			contextEnvelope.MaxTokens = budget
 			return contextEnvelope
 		}
-		projected, err := projector.Project(resultSet, minimalBudget)
+		projected, err := projector.Project(resultSet, budget)
 		if err != nil {
 			return contextEnvelope
 		}
-		projected.MaxTokens = minimalBudget
+		projected.MaxTokens = budget
 		return projected
-	default:
-		return contextEnvelope
 	}
 }
 
@@ -789,25 +875,31 @@ func annotateInclusionReasons(taskFamily kickoffTaskFamily, resultSet retrieval.
 }
 
 func buildInclusionReason(taskFamily kickoffTaskFamily, result retrieval.Result) string {
+	familyLabel := taskFamily.Name
+	if taskFamily.Subprofile != "" {
+		familyLabel = familyLabel + "/" + taskFamily.Subprofile
+	}
 	if len(result.MatchedTerms) > 0 {
-		return fmt.Sprintf("Included for the %s family because it matches task terms: %s.", taskFamily.Name, strings.Join(result.MatchedTerms, ", "))
+		return fmt.Sprintf("Included for the %s family because it matches task terms: %s.", familyLabel, strings.Join(result.MatchedTerms, ", "))
 	}
 	if len(result.GraphRefs) > 0 {
-		return fmt.Sprintf("Included for the %s family because graph relationships connect it to the delegated task context.", taskFamily.Name)
+		return fmt.Sprintf("Included for the %s family because graph relationships connect it to the delegated task context.", familyLabel)
 	}
-	return fmt.Sprintf("Included for the %s family because it survived the family policy and ranked among the strongest available kickoff candidates.", taskFamily.Name)
+	return fmt.Sprintf("Included for the %s family because it survived the family policy and ranked among the strongest available kickoff candidates.", familyLabel)
 }
 
 func shouldSuppressWorkflowKickoffResult(result retrieval.Result, taskFamily kickoffTaskFamily, policy kickoffPolicy) bool {
 	kind := strings.ToLower(strings.TrimSpace(result.Entity.Kind))
 	id := strings.ToLower(strings.TrimSpace(result.Entity.ID))
+	title := strings.ToLower(strings.TrimSpace(result.Entity.Title))
+	summary := strings.ToLower(strings.TrimSpace(result.Entity.Summary))
 	if len(policy.AllowedEntityKinds) > 0 && !stringInSliceFold(policy.AllowedEntityKinds, kind) {
 		return true
 	}
-	if containsAnyFold(kind, policy.SuppressedPatterns) || containsAnyFold(id, policy.SuppressedPatterns) {
+	if containsAnyFold(kind, policy.SuppressedPatterns) || containsAnyFold(id, policy.SuppressedPatterns) || containsAnyFold(title, policy.SuppressedPatterns) || containsAnyFold(summary, policy.SuppressedPatterns) {
 		return true
 	}
-	if taskFamily.Name != KickoffFamilyWorkflowContext {
+	if taskFamily.Name != KickoffFamilyWorkflowContext && !(taskFamily.Name == KickoffFamilyVerificationAudit && taskFamily.Subprofile == KickoffVerificationProfileWorkflow) {
 		if strings.HasPrefix(kind, "workflow_") || strings.HasPrefix(id, "workflow-finish:") {
 			return true
 		}
@@ -818,15 +910,14 @@ func shouldSuppressWorkflowKickoffResult(result retrieval.Result, taskFamily kic
 func classifyKickoffTaskFamily(task string) kickoffTaskFamily {
 	normalized := normalizeKickoffTask(task)
 	switch {
+	case isVerificationIntent(normalized):
+		return classifyVerificationTaskFamily(normalized)
 	case containsAnyFold(normalized, workflowKeywords):
 		return kickoffTaskFamily{Name: KickoffFamilyWorkflowContext, ClassificationBasis: matchedKeywords(normalized, workflowKeywords)}
 	case containsAnyFold(normalized, reportingKeywords):
 		return kickoffTaskFamily{Name: KickoffFamilyReportingSynthesis, ClassificationBasis: matchedKeywords(normalized, reportingKeywords)}
 	case containsAnyFold(normalized, troubleshootingKeywords):
 		return kickoffTaskFamily{Name: KickoffFamilyTroubleshooting, ClassificationBasis: matchedKeywords(normalized, troubleshootingKeywords)}
-	case containsAnyFold(normalized, verificationKeywords) || containsAnyFold(normalized, graphHygieneKeywords):
-		basis := append(matchedKeywords(normalized, verificationKeywords), matchedKeywords(normalized, graphHygieneKeywords)...)
-		return kickoffTaskFamily{Name: KickoffFamilyVerificationAudit, ClassificationBasis: dedupeStrings(basis)}
 	case containsAnyFold(normalized, writeProducingKeywords):
 		return kickoffTaskFamily{Name: KickoffFamilyWriteProducing, ClassificationBasis: matchedKeywords(normalized, writeProducingKeywords)}
 	default:
@@ -834,43 +925,105 @@ func classifyKickoffTaskFamily(task string) kickoffTaskFamily {
 	}
 }
 
-func kickoffPolicyForFamily(family string) kickoffPolicy {
-	switch family {
+func kickoffPolicyForFamily(taskFamily kickoffTaskFamily) kickoffPolicy {
+	switch taskFamily.Name {
 	case KickoffFamilyWorkflowContext:
-		return kickoffPolicy{Family: family, DefaultKickoffMode: KickoffModeInject}
+		return kickoffPolicy{
+			Family:               taskFamily.Name,
+			DefaultKickoffMode:   KickoffModeInject,
+			AutoInjectThreshold:  0.70,
+			AutoMinimalThreshold: 0.45,
+			InjectTokenBudget:    1200,
+			MinimalTokenBudget:   300,
+			LowConfidenceMode:    KickoffModeMinimal,
+		}
 	case KickoffFamilyWriteProducing:
 		return kickoffPolicy{
-			Family:             family,
-			AllowedEntityKinds: []string{"document", "decision", "story", "reasoningunit", "coderef", "file", "type", "function"},
-			SuppressedPatterns: []string{"workflow_", "workflow-finish:"},
-			DefaultKickoffMode: KickoffModeInject,
+			Family:               taskFamily.Name,
+			AllowedEntityKinds:   []string{"document", "decision", "story", "reasoningunit", "coderef", "file", "type", "function"},
+			SuppressedPatterns:   []string{"workflow_", "workflow-finish:"},
+			DefaultKickoffMode:   KickoffModeInject,
+			AutoInjectThreshold:  0.70,
+			AutoMinimalThreshold: 0.45,
+			InjectTokenBudget:    1200,
+			MinimalTokenBudget:   300,
+			LowConfidenceMode:    KickoffModeMinimal,
 		}
 	case KickoffFamilyTroubleshooting:
 		return kickoffPolicy{
-			Family:             family,
-			AllowedEntityKinds: []string{"document", "decision", "reasoningunit", "coderef", "file", "type", "function", "researchfinding"},
-			SuppressedPatterns: []string{"workflow_", "workflow-finish:"},
-			DefaultKickoffMode: KickoffModeInject,
+			Family:               taskFamily.Name,
+			AllowedEntityKinds:   []string{"document", "decision", "reasoningunit", "coderef", "file", "type", "function", "researchfinding"},
+			SuppressedPatterns:   []string{"workflow_", "workflow-finish:"},
+			DefaultKickoffMode:   KickoffModeInject,
+			AutoInjectThreshold:  0.70,
+			AutoMinimalThreshold: 0.45,
+			InjectTokenBudget:    900,
+			MinimalTokenBudget:   300,
+			LowConfidenceMode:    KickoffModeMinimal,
 		}
 	case KickoffFamilyVerificationAudit:
-		return kickoffPolicy{
-			Family:             family,
-			AllowedEntityKinds: []string{"document", "decision", "coderef", "file", "type", "function", "researchfinding"},
-			SuppressedPatterns: []string{"workflow_", "workflow-finish:"},
-			DefaultKickoffMode: KickoffModeInject,
+		switch taskFamily.Subprofile {
+		case KickoffVerificationProfileStats:
+			return kickoffPolicy{
+				Family:               taskFamily.Name,
+				Subprofile:           taskFamily.Subprofile,
+				AllowedEntityKinds:   []string{"document", "decision", "file", "researchfinding"},
+				SuppressedPatterns:   append([]string{"workflow_", "workflow-finish:"}, verificationWorkflowKeywords...),
+				DefaultKickoffMode:   KickoffModeMinimal,
+				AutoInjectThreshold:  0.95,
+				AutoMinimalThreshold: 0.60,
+				InjectTokenBudget:    220,
+				MinimalTokenBudget:   120,
+				LowConfidenceMode:    KickoffModeAbstain,
+			}
+		case KickoffVerificationProfileWorkflow:
+			return kickoffPolicy{
+				Family:               taskFamily.Name,
+				Subprofile:           taskFamily.Subprofile,
+				AllowedEntityKinds:   []string{"document", "decision", "coderef", "file", "type", "function", "reasoningunit"},
+				SuppressedPatterns:   append([]string{"graph stats", "graph health", "health indicator", "duplicate", "duplication", "contradiction", "orphan"}, graphHygieneKeywords...),
+				DefaultKickoffMode:   KickoffModeMinimal,
+				AutoInjectThreshold:  0.90,
+				AutoMinimalThreshold: 0.55,
+				InjectTokenBudget:    320,
+				MinimalTokenBudget:   180,
+				LowConfidenceMode:    KickoffModeMinimal,
+			}
+		default:
+			return kickoffPolicy{
+				Family:               taskFamily.Name,
+				Subprofile:           KickoffVerificationProfileGeneral,
+				AllowedEntityKinds:   []string{"document", "decision", "coderef", "file", "type", "function", "researchfinding"},
+				SuppressedPatterns:   []string{"workflow_", "workflow-finish:"},
+				DefaultKickoffMode:   KickoffModeMinimal,
+				AutoInjectThreshold:  0.85,
+				AutoMinimalThreshold: 0.55,
+				InjectTokenBudget:    400,
+				MinimalTokenBudget:   220,
+				LowConfidenceMode:    KickoffModeAbstain,
+			}
 		}
 	case KickoffFamilyReportingSynthesis:
 		return kickoffPolicy{
-			Family:             family,
-			SuppressedPatterns: []string{"workflow_", "workflow-finish:"},
-			DefaultKickoffMode: KickoffModeAbstain,
+			Family:               taskFamily.Name,
+			SuppressedPatterns:   []string{"workflow_", "workflow-finish:"},
+			DefaultKickoffMode:   KickoffModeAbstain,
+			AutoMinimalThreshold: 1,
+			InjectTokenBudget:    0,
+			MinimalTokenBudget:   0,
+			LowConfidenceMode:    KickoffModeAbstain,
 		}
 	default:
 		return kickoffPolicy{
-			Family:             KickoffFamilyAmbiguousTask,
-			AllowedEntityKinds: []string{"document", "decision", "story", "coderef", "file"},
-			SuppressedPatterns: []string{"workflow_", "workflow-finish:"},
-			DefaultKickoffMode: KickoffModeMinimal,
+			Family:               KickoffFamilyAmbiguousTask,
+			AllowedEntityKinds:   []string{"document", "decision", "story", "coderef", "file"},
+			SuppressedPatterns:   []string{"workflow_", "workflow-finish:"},
+			DefaultKickoffMode:   KickoffModeMinimal,
+			AutoInjectThreshold:  0.90,
+			AutoMinimalThreshold: 0.50,
+			InjectTokenBudget:    600,
+			MinimalTokenBudget:   220,
+			LowConfidenceMode:    KickoffModeAbstain,
 		}
 	}
 }
@@ -891,6 +1044,8 @@ func buildDelegationBrief(kickoff KickoffEnvelope) DelegationBrief {
 		fmt.Sprintf("- requested mode: %s", kickoff.Advisory.RequestedMode),
 		fmt.Sprintf("- effective mode: %s", kickoff.Advisory.EffectiveMode),
 		fmt.Sprintf("- confidence: %s (%.2f)", kickoff.Advisory.ConfidenceLevel, kickoff.Advisory.ConfidenceScore),
+		fmt.Sprintf("- effective threshold: %.2f", kickoff.Advisory.EffectiveThreshold),
+		fmt.Sprintf("- token budget applied: %d", kickoff.Advisory.TokenBudgetApplied),
 		fmt.Sprintf("- next step: %s", kickoff.Advisory.NextStep),
 		"",
 		"Graph state:",
@@ -923,6 +1078,49 @@ func buildDelegationBrief(kickoff KickoffEnvelope) DelegationBrief {
 		Prompt:   strings.Join(lines, "\n"),
 		Guidance: guidance,
 	}
+}
+
+func isVerificationIntent(task string) bool {
+	return containsAnyFold(task, verificationKeywords) || containsAnyFold(task, graphHygieneKeywords)
+}
+
+func classifyVerificationTaskFamily(task string) kickoffTaskFamily {
+	basis := append(matchedKeywords(task, verificationKeywords), matchedKeywords(task, graphHygieneKeywords)...)
+	switch {
+	case containsAnyFold(task, verificationStatsKeywords) || containsAnyFold(task, graphHygieneKeywords):
+		basis = append(basis, matchedKeywords(task, verificationStatsKeywords)...)
+		return kickoffTaskFamily{Name: KickoffFamilyVerificationAudit, Subprofile: KickoffVerificationProfileStats, ClassificationBasis: dedupeStrings(basis)}
+	case containsAnyFold(task, verificationWorkflowKeywords):
+		basis = append(basis, matchedKeywords(task, verificationWorkflowKeywords)...)
+		return kickoffTaskFamily{Name: KickoffFamilyVerificationAudit, Subprofile: KickoffVerificationProfileWorkflow, ClassificationBasis: dedupeStrings(basis)}
+	default:
+		return kickoffTaskFamily{Name: KickoffFamilyVerificationAudit, Subprofile: KickoffVerificationProfileGeneral, ClassificationBasis: dedupeStrings(basis)}
+	}
+}
+
+func advisoryThreshold(policy kickoffPolicy, mode string) float64 {
+	switch mode {
+	case KickoffModeInject:
+		return policy.AutoInjectThreshold
+	default:
+		return policy.AutoMinimalThreshold
+	}
+}
+
+func kickoffBudgetForMode(policy kickoffPolicy, mode string, maxTokens int) int {
+	switch mode {
+	case KickoffModeAbstain:
+		return 0
+	case KickoffModeMinimal:
+		if policy.MinimalTokenBudget > 0 && policy.MinimalTokenBudget < maxTokens {
+			return policy.MinimalTokenBudget
+		}
+	case KickoffModeInject:
+		if policy.InjectTokenBudget > 0 && policy.InjectTokenBudget < maxTokens {
+			return policy.InjectTokenBudget
+		}
+	}
+	return maxTokens
 }
 
 func formatKickoffContextResult(result contextprojector.Result) string {

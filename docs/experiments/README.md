@@ -7,6 +7,14 @@ reports actually said.
 It is the shortest path from "does CGE really help?" to the concrete artifact
 trail that informed VP5 and VP6.
 
+For the final repository-level conclusion after TH7, see:
+
+- [`docs/experiments/final-investment-assessment.md`](final-investment-assessment.md)
+
+For the final repository-level conclusion after TH7, see:
+
+- [`docs/experiments/final-investment-assessment.md`](final-investment-assessment.md)
+
 ## Why these campaigns exist
 
 VP4 turned CGE into a local experiment lab. VP5 tightened the telemetry contract
@@ -274,3 +282,41 @@ The important paths are:
 - `.graph/lab/reports/report-20260327t193838z.json`
 
 These artifacts are the machine-readable audit trail behind the summaries above.
+
+## Final repository conclusion
+
+The final conclusion after the TH6 and TH7 follow-up work is no longer "keep
+investing and tighten precision." It is narrower and more negative:
+
+- the product idea remained interesting
+- some task families remained genuinely helped by graph-backed kickoff
+- but the implementation never became stable and decision-clean enough to serve
+  as a dependable base layer for broader product development
+
+In other words:
+
+- **worth learning from:** yes
+- **worth continuing to build on as the current product foundation:** no
+
+The dedicated final assessment is documented in:
+
+- [`docs/experiments/final-investment-assessment.md`](final-investment-assessment.md)
+
+## Final repository conclusion
+
+The final conclusion after the TH6 and TH7 follow-up work is no longer "keep
+investing and tighten precision." It is narrower and more negative:
+
+- the product idea remained interesting
+- some task families remained genuinely helped by graph-backed kickoff
+- but the implementation never became stable and decision-clean enough to serve
+  as a dependable base layer for broader product development
+
+In other words:
+
+- **worth learning from:** yes
+- **worth continuing to build on as the current product foundation:** no
+
+The dedicated final assessment is documented in:
+
+- [`docs/experiments/final-investment-assessment.md`](final-investment-assessment.md)

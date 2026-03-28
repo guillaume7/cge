@@ -14,21 +14,23 @@ import (
 )
 
 type RunRecord struct {
-	SchemaVersion       string        `json:"schema_version"`
-	RunID               string        `json:"run_id"`
-	TaskID              string        `json:"task_id"`
-	ConditionID         string        `json:"condition_id"`
-	Model               string        `json:"model"`
-	SessionTopology     string        `json:"session_topology"`
-	Seed                *int64        `json:"seed"`
-	PromptVariant       string        `json:"prompt_variant"`
-	StartedAt           string        `json:"started_at"`
-	FinishedAt          string        `json:"finished_at"`
-	Telemetry           *RunTelemetry `json:"telemetry"`
-	KickoffInputsRef    string        `json:"kickoff_inputs_ref"`
-	SessionStructureRef string        `json:"session_structure_ref"`
-	WritebackOutputsRef string        `json:"writeback_outputs_ref"`
-	OutcomeArtifactsRef string        `json:"outcome_artifacts_ref"`
+	SchemaVersion             string        `json:"schema_version"`
+	RunID                     string        `json:"run_id"`
+	TaskID                    string        `json:"task_id"`
+	ConditionID               string        `json:"condition_id"`
+	Model                     string        `json:"model"`
+	SessionTopology           string        `json:"session_topology"`
+	Seed                      *int64        `json:"seed"`
+	PromptVariant             string        `json:"prompt_variant"`
+	StartedAt                 string        `json:"started_at"`
+	FinishedAt                string        `json:"finished_at"`
+	Telemetry                 *RunTelemetry `json:"telemetry"`
+	KickoffInputsRef          string        `json:"kickoff_inputs_ref"`
+	WorkflowStartResponseRef  string        `json:"workflow_start_response_ref,omitempty"`
+	BaselinePromptMetadataRef string        `json:"baseline_prompt_metadata_ref,omitempty"`
+	SessionStructureRef       string        `json:"session_structure_ref"`
+	WritebackOutputsRef       string        `json:"writeback_outputs_ref"`
+	OutcomeArtifactsRef       string        `json:"outcome_artifacts_ref"`
 }
 
 type RunTelemetry struct {
@@ -167,6 +169,12 @@ func validateRunRecord(recordsPath string, suite SuiteManifest, conditions Condi
 	}
 
 	validateArtifactReference("kickoff_inputs_ref", record.KickoffInputsRef, &violations)
+	if record.WorkflowStartResponseRef != "" {
+		validateArtifactReference("workflow_start_response_ref", record.WorkflowStartResponseRef, &violations)
+	}
+	if record.BaselinePromptMetadataRef != "" {
+		validateArtifactReference("baseline_prompt_metadata_ref", record.BaselinePromptMetadataRef, &violations)
+	}
 	validateArtifactReference("session_structure_ref", record.SessionStructureRef, &violations)
 	validateArtifactReference("writeback_outputs_ref", record.WritebackOutputsRef, &violations)
 	validateArtifactReference("outcome_artifacts_ref", record.OutcomeArtifactsRef, &violations)
