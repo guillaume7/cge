@@ -1,4 +1,4 @@
-# Components — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP5 + VP6 + VP7
+# Components — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP5 + VP6 + VP7 + VP8
 
 ## Component Map
 
@@ -163,6 +163,43 @@
   statistical computation logic
 - **Dependencies**: Run Ledger, Evaluation Service
 
+### 18. Context Evaluator
+
+- **Responsibility**: Score candidate context bundles and candidate task outputs
+  for relevance, consistency, and likely usefulness before they are trusted by
+  the consuming agent or persisted as memory. Produces composite confidence
+  scores consumed by the Decision Engine.
+- **Interface**: `evaluate(candidates, taskContext)`,
+  `evaluateOutput(output, taskContext)`
+- **Data ownership**: scoring dimension definitions, heuristic weight
+  configuration, composite confidence computation rules
+- **Dependencies**: Retrieval Engine (for candidate data), Kuzu Store (for
+  consistency checks against existing graph state)
+
+### 19. Decision Engine
+
+- **Responsibility**: Select a normalized decision outcome (continue, minimal,
+  abstain, backtrack, write) based on evaluator confidence scores and
+  configurable thresholds. Compose the result into a machine-readable decision
+  envelope.
+- **Interface**: `decide(evaluationResult, thresholds)`,
+  `decideWrite(evaluationResult, thresholds)`
+- **Data ownership**: outcome selection rules, threshold configuration,
+  decision envelope schema
+- **Dependencies**: Context Evaluator, Attribution Recorder
+
+### 20. Attribution Recorder
+
+- **Responsibility**: Generate and persist attribution records for every
+  evaluator-loop decision. Record per-candidate fates, memory decisions,
+  evaluator scores, and decision outcomes. Provide inline summaries for
+  consuming agents and persisted records for lab analysis.
+- **Interface**: `record(decision, evaluationResult, candidates)`,
+  `loadAttribution(attributionId)`, `listAttributions(filter)`
+- **Data ownership**: attribution records under `.graph/attribution/`,
+  attribution record schema, inline summary formatting rules
+- **Dependencies**: local filesystem
+
 ## Boundary Rules
 
 - The CLI Surface never talks directly to Kuzu or Bleve internals.
@@ -194,6 +231,20 @@
   and re-run independently.
 - Report generation reads the run ledger and evaluation records; reports are
   derived artifacts, not the system of record.
+- The Context Evaluator reads retrieval candidates and graph state but does not
+  write to the graph or modify retrieval rankings. It produces scores only.
+- The Decision Engine reads evaluator scores and threshold configuration; it
+  does not invoke retrieval or evaluation directly.
+- The Attribution Recorder persists decision evidence but does not influence
+  decisions. It is a write-only record of what the evaluator loop decided.
+- The evaluator loop (Context Evaluator → Decision Engine → Attribution
+  Recorder) is composed by `graph context` and `graph workflow start`; other
+  commands (explain, diff, stats, hygiene) bypass the evaluator loop.
+- Workflow-mediated memory writes pass through the evaluator loop; raw
+  `graph write` commands do not, preserving backward compatibility.
+- Family-aware kickoff policies (ADR-016, ADR-017) continue to operate upstream
+  of the evaluator loop. The Decision Engine can further narrow or abstain but
+  cannot override a family-level suppression.
 
 ## Dependency Diagram
 
@@ -206,6 +257,12 @@ CLI Surface
   ├── Retrieval Engine
   │     ├── Kuzu Store
   │     └── Text Index
+  ├── Context Evaluator             (VP8)
+  │     ├── Retrieval Engine
+  │     └── Kuzu Store
+  ├── Decision Engine               (VP8)
+  │     └── Context Evaluator
+  ├── Attribution Recorder          (VP8)
   ├── Context Projector
   ├── Explain / Diff Service
   ├── Stats Service
@@ -218,6 +275,9 @@ CLI Surface
   └── Delegation Workflow Service
         ├── Workflow Asset Manager
         ├── Retrieval Engine
+        ├── Context Evaluator       (VP8)
+        ├── Decision Engine         (VP8)
+        ├── Attribution Recorder    (VP8)
         ├── Context Projector
         ├── Stats Service
         ├── Hygiene Service
@@ -239,15 +299,22 @@ CLI Surface
 
 ## Why These Boundaries
 
-These boundaries keep the MVP simple while making three concerns explicit:
+These boundaries keep the product simple while making these concerns explicit:
 
 - storage
 - retrieval
+- evaluation and decision (VP8)
+- attribution (VP8)
 - projection/explanation
 - graph-health analysis and cleanup
 - delegated-subtask workflow orchestration
 - benchmark evidence collection
 - controlled experiment orchestration with separated evaluation
+
+The VP8 evaluator loop adds three components (Context Evaluator, Decision
+Engine, Attribution Recorder) but they follow the same design principle as the
+rest of the architecture: in-process, composable, and explicit. They do not
+introduce services, daemons, or external dependencies.
 
 That separation is enough to keep implementation clean without inventing a
 premature service architecture.

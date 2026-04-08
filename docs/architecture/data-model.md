@@ -1,4 +1,4 @@
-# Data Model — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4
+# Data Model — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP8
 
 ## Modeling Strategy
 
@@ -660,3 +660,213 @@ It should avoid:
 - storing experiment data in the graph database
 - inventing a hosted telemetry backend
 - conflating evaluation scores with run execution records
+
+## VP8 Evaluator Loop Model
+
+VP8 introduces three data shapes for the evaluator loop. These are transient
+decision artifacts, not durable graph entities. They are produced during
+evaluated retrieval and persisted as local filesystem records.
+
+### Evaluation Score
+
+Produced by the Context Evaluator when scoring candidate context or candidate
+outputs.
+
+Illustrative shape:
+
+```json
+{
+  "schema_version": "v1",
+  "evaluation_id": "eval-20260501-001",
+  "task_context": "implement retrieval ranking adjustment",
+  "timestamp": "2026-05-01T10:00:00Z",
+  "session_id": "sess-42",
+  "candidates_scored": 8,
+  "scores": [
+    {
+      "candidate_id": "entity:adr-006",
+      "relevance": 0.82,
+      "consistency": 0.91,
+      "usefulness": 0.74,
+      "composite": 0.81,
+      "fate": "survived"
+    },
+    {
+      "candidate_id": "entity:old-plan-draft",
+      "relevance": 0.31,
+      "consistency": 0.55,
+      "usefulness": 0.20,
+      "composite": 0.32,
+      "fate": "rejected",
+      "rejection_reason": "below relevance threshold"
+    }
+  ],
+  "aggregate_confidence": 0.76
+}
+```
+
+Required contents:
+
+- evaluation identity and timestamp
+- task context description
+- per-candidate dimension scores and composite
+- per-candidate fate (survived, trimmed, rejected) with reason when rejected
+- aggregate confidence for the candidate bundle
+
+### Decision Outcome
+
+Produced by the Decision Engine when selecting an outcome from evaluator scores.
+
+Illustrative shape:
+
+```json
+{
+  "schema_version": "v1",
+  "decision_id": "dec-20260501-001",
+  "evaluation_id": "eval-20260501-001",
+  "outcome": "minimal",
+  "confidence": 0.76,
+  "thresholds": {
+    "continue_min": 0.80,
+    "minimal_min": 0.50,
+    "abstain_below": 0.50,
+    "write_min": 0.85
+  },
+  "survivors": ["entity:adr-006"],
+  "trimmed": ["entity:retrieval-spec"],
+  "rejected": ["entity:old-plan-draft"],
+  "reason": "aggregate confidence below continue threshold; narrowed to top candidate"
+}
+```
+
+Required contents:
+
+- decision identity linked to the evaluation
+- selected outcome
+- composite confidence that motivated the outcome
+- threshold configuration that was active
+- candidate lists for survived, trimmed, and rejected
+- human-readable reason for the outcome
+
+### Attribution Record
+
+Produced by the Attribution Recorder to persist the full decision evidence
+trail.
+
+Illustrative shape:
+
+```json
+{
+  "schema_version": "v1",
+  "attribution_id": "attr-20260501-001",
+  "decision_id": "dec-20260501-001",
+  "evaluation_id": "eval-20260501-001",
+  "timestamp": "2026-05-01T10:00:01Z",
+  "session_id": "sess-42",
+  "task_context": "implement retrieval ranking adjustment",
+  "outcome": "minimal",
+  "per_candidate": [
+    {
+      "candidate_id": "entity:adr-006",
+      "fate": "survived",
+      "scores": { "relevance": 0.82, "consistency": 0.91, "usefulness": 0.74 },
+      "reason": "highest composite score; above minimal threshold"
+    },
+    {
+      "candidate_id": "entity:old-plan-draft",
+      "fate": "rejected",
+      "scores": { "relevance": 0.31, "consistency": 0.55, "usefulness": 0.20 },
+      "reason": "below relevance threshold"
+    }
+  ],
+  "memory_decision": {
+    "action": "deferred",
+    "reason": "aggregate confidence below write threshold"
+  }
+}
+```
+
+Required contents:
+
+- attribution identity linked to decision and evaluation
+- session and task context
+- selected outcome
+- per-candidate fates with scores and reasons
+- memory decision (approved, deferred, skipped) with reason
+- timestamp
+
+Attribution records are written to `.graph/attribution/` and referenced by
+lab run records when produced during experiment runs.
+
+### Decision Envelope
+
+Returned inline to the consuming agent as part of the `graph context` or
+`workflow start` response. Contains the decision outcome, surviving context
+bundle, and an inline attribution summary.
+
+Illustrative shape (embedded in the context response):
+
+```json
+{
+  "decision": {
+    "outcome": "minimal",
+    "confidence": 0.76,
+    "attribution_summary": "1 of 8 candidates survived; 1 trimmed; 6 rejected below relevance threshold",
+    "attribution_id": "attr-20260501-001"
+  },
+  "context": {
+    "...existing context envelope fields..."
+  }
+}
+```
+
+Consumers that do not use decision metadata can ignore the `decision` field
+and read the `context` field as before.
+
+## VP8 Harness-Aware Condition Model
+
+VP8 extends the experiment condition model (see VP4 Condition Manifest above)
+with new condition types:
+
+```json
+{
+  "conditions": [
+    {
+      "condition_id": "with-harness",
+      "workflow_mode": "harness_backed",
+      "description": "full CGE pipeline: retrieval, evaluation, decision, attribution"
+    },
+    {
+      "condition_id": "without-harness",
+      "workflow_mode": "baseline_no_cge",
+      "description": "no CGE involvement; standard Copilot CLI only"
+    },
+    {
+      "condition_id": "graph-only",
+      "workflow_mode": "graph_backed",
+      "description": "graph retrieval and projection without evaluator loop; pre-VP8 behavior"
+    }
+  ]
+}
+```
+
+Existing `with-graph` and `without-graph` condition IDs remain valid for
+backward compatibility. The new conditions are additive.
+
+## VP8 Modeling Rule
+
+VP8 should prefer:
+
+- graph persistence for durable shared knowledge (unchanged from VP3/VP4)
+- workflow envelopes for orchestration contracts (unchanged from VP3/VP4)
+- local filesystem artifacts for experiment runs, evaluations, reports,
+  and attribution records
+- evaluator-loop data shapes (scores, decisions, attributions) as transient
+  artifacts, not graph entities
+
+It should avoid:
+
+- storing evaluator-loop artifacts in the graph database
+- treating evaluation scores as durable knowledge
+- adding graph schema changes for the evaluator loop
+- conflating attribution records with graph provenance metadata

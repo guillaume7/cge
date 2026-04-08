@@ -44,7 +44,7 @@ None. TH6 extends `graph workflow start` conservatively and keeps compatibility 
 
 ### New Surfaces
 - `docs/vision_of_product/VP6-precision-governed-advisory-kickoff/README.md`
-- `docs/ADRs/ADR-016-precision-governed-advisory-kickoff.md`
+- `docs/architecture/adrs/ADR-016-precision-governed-advisory-kickoff.md`
 - `docs/themes/TH6-precision-governed-advisory-kickoff/...`
 - `docs/plan/RELEASE-TH6.md`
 

@@ -205,7 +205,7 @@ That directly became TH6:
 See:
 
 - `docs/vision_of_product/VP6-precision-governed-advisory-kickoff/README.md`
-- `docs/ADRs/ADR-016-precision-governed-advisory-kickoff.md`
+- `docs/architecture/adrs/ADR-016-precision-governed-advisory-kickoff.md`
 - `docs/plan/RELEASE-TH6.md`
 
 ## Cross-model survey on the campaign evidence

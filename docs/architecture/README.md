@@ -1,9 +1,17 @@
-# Architecture Overview — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP5 + VP6 + VP7
+# Architecture Overview — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP5 + VP6 + VP7 + VP8
 
 ## System Context
 
 The product is a local, repo-scoped CLI named `graph` that provides a shared
 graph memory for AI agents and sub-agents working inside the same repository.
+
+Starting with VP8, the product shifts from a graph-led memory tool to a
+**local task-quality harness** for autonomous agents working through the
+Copilot CLI. Graph memory remains important as a subsystem, but the core
+product behavior is now an explicit evaluator loop that scores, decides, and
+attributes before trusting any context source — including the graph. The
+Copilot CLI remains the host runtime; CGE augments it with retrieval,
+evaluation, decision, and memory capabilities.
 
 Its core purpose is to improve:
 
@@ -15,6 +23,10 @@ Its core purpose is to improve:
 - measurable reduction in recovery-token cost for non-trivial delegated work
 - credible, repeatable experimental evidence about when graph-backed workflow
   helps and when it does not
+- evaluation and critique of candidate context before injection
+- honest decision outcomes where abstaining and backtracking are valid results
+- attributed memory updates with evaluator-gated write discipline
+- integration with the Copilot CLI harness as a local augmentation layer
 
 The product remains local/offline, chainable in shell pipelines, and optimized
 for machine use rather than human graph exploration.
@@ -67,6 +79,15 @@ for machine use rather than human graph exploration.
   existing workflow contract
 - preserve raw workflow-start and baseline prompt-surface attribution for
   verification-focused reruns
+- score candidate context for relevance, consistency, and likely usefulness
+  before injection
+- select a decision outcome (continue, minimal, abstain, backtrack, write)
+  based on evaluator confidence
+- produce attribution records explaining why context was injected, narrowed,
+  rejected, or persisted
+- evaluate candidate outputs for quality before approving memory writes
+- support harness-aware experiment conditions comparing full CGE pipeline
+  against no-CGE and graph-only baselines
 
 ### Non-Functional
 
@@ -86,17 +107,27 @@ for machine use rather than human graph exploration.
 - artifact-first experiment evidence traceable to concrete run records
 - separated evaluation that supports blinding and re-scoring
 - proportional experiment tooling with no hosted telemetry or external services
+- evaluation-before-trust discipline for all retrieval paths in the control loop
+- honest decision outcomes where abstaining and backtracking are valid
+- attribution as a required output of the evaluator loop, not an optional
+  diagnostic
+- Copilot CLI augmentation model where CGE adds value without replacing the
+  host runtime
 
 ## Architectural Style
 
-The product uses a **single-process CLI with embedded storage and a small
-internal service layer**.
+The product uses a **single-process CLI with embedded storage, an evaluator
+loop, and a small internal service layer**.
 
 This is intentionally simple:
 
 - one local binary
 - one graph database as the system of record
 - one local text-relevance index for retrieval ranking
+- one in-process evaluator loop that scores context and outputs before trust
+- one in-process decision engine that selects honest outcomes from evaluator
+  scores
+- one in-process attribution recorder that persists decision evidence
 - one in-process graph analysis layer for stats and hygiene
 - one thin workflow orchestration layer for delegated-subtask kickoff/handoff
 - one local benchmark harness/report path for evaluating workflow usefulness
@@ -134,35 +165,48 @@ stdin / args / files
   | engine      |      | (BM25/FTS)       |
   +------+------+      +------------------+
           |
-          +-------------------+--------------------+----------------------+
-          |                   |                    |                      |
-          v                   v                    v                      v
-   +-------------+      +-------------+     +--------------+     +---------------+
-   | context     |      | explain/diff|     | stats &      |     | workflow      |
-   | projector   |      | services    |     | hygiene      |     | orchestration |
-   +------+------+      +-------------+     | analyzers    |     +-------+-------+
-          |                                 +------+-------+             |
-          |                                        |                     v
-          +----------------------------------------+             +---------------+
-          |                                                      | benchmark     |
-          |                                                      | harness       |
-          |                                                      +-------+-------+
-          |                                                              |
-          |                                                              v
-          |                                                      +---------------+
-          |                                                      | experiment    |
-          |                                                      | lab           |
-          |                                                      | orchestrator  |
-          |                                                      +--+--------+---+
-          |                                                         |        |
-          |                                                    +----+---+ +--+--------+
-          |                                                    |run     | |evaluation |
-          |                                                    |ledger  | |& report   |
-          |                                                    +----+---+ +--+--------+
-          |                                                         |        |
-          v                                                         v        v
-  stdout / files                                              stdout / files
+          +---+---------------------+---------------------+
+          |   |                     |                     |
+          |   v                     v                     v
+          |  +-------------+  +--------------+     +---------------+
+          |  | explain/diff|  | stats &      |     | workflow      |
+          |  | services    |  | hygiene      |     | orchestration |
+          |  +-------------+  | analyzers    |     +-------+-------+
+          |                   +------+-------+             |
+          |                          |                     v
+          |  VP8 evaluator loop      |             +---------------+
+          |  ------------------      |             | benchmark     |
+          v                          |             | harness       |
+  +-------------------+              |             +-------+-------+
+  | context evaluator |              |                     |
+  +--------+----------+              |                     v
+           |                         |             +---------------+
+           v                         |             | experiment    |
+  +-------------------+              |             | lab           |
+  | decision engine   |              |             | orchestrator  |
+  +--------+----------+              |             +--+--------+---+
+           |                         |                |        |
+           v                         |           +----+---+ +--+--------+
+  +---------------------+            |           |run     | |evaluation |
+  | attribution recorder|            |           |ledger  | |& report   |
+  +--------+------------+            |           +----+---+ +--+--------+
+           |                         |                |        |
+           v                         |                v        v
+    +-------------+                  |           stdout / files
+    | context     |                  |
+    | projector   |                  |
+    +------+------+                  |
+           |                         |
+           +-------------------------+
+           |
+           v
+    stdout / files
 ```
+
+Note: the evaluator loop (context evaluator → decision engine → attribution
+recorder → context projector) is composed by `graph context` and
+`graph workflow start`. Other paths (explain, diff, stats, hygiene) continue
+to read from the retrieval engine directly without evaluation.
 
 ## Request Flows
 
@@ -193,8 +237,14 @@ stdin / args / files
 
 1. Run the same hybrid retrieval pipeline as `graph query`.
 2. Expand only the neighborhood needed for continuity.
-3. Project results into a token-budgeted context envelope.
-4. Return compact machine-readable context for downstream agents.
+3. Pass candidate results through the Context Evaluator to score relevance,
+   consistency, and likely usefulness.
+4. Pass evaluator scores through the Decision Engine to select an outcome
+   (continue, minimal, abstain, backtrack).
+5. Record the decision and per-candidate fate in an attribution record.
+6. Project surviving results into a token-budgeted context envelope.
+7. Return compact machine-readable context with decision metadata and
+   attribution for downstream agents.
 
 ### `graph explain`
 
@@ -237,17 +287,25 @@ stdin / args / files
 1. Accept a delegated-subtask request.
 2. Inspect graph availability, current revision state, and graph health.
 3. Retrieve compact task-relevant context from the graph.
-4. Produce a machine-readable kickoff envelope suitable for a sub-agent prompt.
-5. Recommend whether to proceed, bootstrap, inspect hygiene, or gather more
+4. Pass candidate context through the Context Evaluator and Decision Engine.
+5. Apply family-aware kickoff policies (ADR-016, ADR-017) and evaluator-loop
+   decisions in sequence.
+6. Produce a machine-readable kickoff envelope with decision metadata and
+   attribution.
+7. Recommend whether to proceed, bootstrap, minimize, abstain, or gather more
    context.
 
 ### `graph workflow finish`
 
 1. Accept a structured delegated-task outcome payload.
-2. Validate the payload and write durable graph memory through the existing
+2. Pass the outcome through the Context Evaluator to score write-worthiness.
+3. Apply the Decision Engine's write threshold; approve, defer, or skip the
+   memory update.
+4. When approved, write durable graph memory through the existing
    revision-aware write path.
-3. Return revision anchors, write summaries, and a machine-readable handoff
-   envelope for the next agent.
+5. Record the write decision and attribution.
+6. Return revision anchors, write summaries, attribution, and a
+   machine-readable handoff envelope for the next agent.
 
 ### `graph workflow benchmark`
 
@@ -275,8 +333,8 @@ stdin / args / files
 3. Assign or verify randomized/counterbalanced condition ordering when running
    a batch.
 4. Execute the task through existing workflow primitives (`workflow start`,
-   `workflow finish`) for graph-backed conditions or through a baseline path
-   for no-graph conditions.
+   `workflow finish`) for harness-aware and graph-backed conditions, or through
+   a baseline path for no-CGE conditions.
 5. Capture truthful run telemetry: kickoff inputs, delegated session structure,
    writeback outputs, measured token/usage data when available, explicit
    completeness state when not, plus timing and retry information.
@@ -387,6 +445,34 @@ Owns:
 - effect-size computation and uncertainty interval estimation
 - report artifacts stored under `.graph/lab/reports/`
 
+### Context Evaluator
+
+Owns:
+
+- relevance, consistency, and usefulness scoring logic
+- composite confidence computation
+- candidate-level evaluation results
+- scoring heuristic configuration and thresholds
+
+### Decision Engine
+
+Owns:
+
+- outcome selection logic (continue, minimal, abstain, backtrack, write)
+- threshold-driven outcome mapping from evaluator scores
+- machine-readable decision envelope assembly
+- composability with upstream family-aware kickoff policies
+
+### Attribution Recorder
+
+Owns:
+
+- attribution record generation and persistence
+- per-candidate fate records (survived, trimmed, rejected, and why)
+- memory-decision records (approved, deferred, skipped, and why)
+- inline attribution summary formatting
+- attribution storage under `.graph/attribution/`
+
 ## Key Architectural Decisions
 
 - **ADR-001** — Use Go and Cobra for the CLI implementation
@@ -410,6 +496,15 @@ Owns:
   surface
 - **ADR-013** — Artifact-first run ledger and scientific reporting model
 - **ADR-014** — Separated evaluation protocol for quality scoring
+- **ADR-015** — Measured execution telemetry with explicit completeness states
+- **ADR-016** — Precision-governed advisory kickoff policies
+- **ADR-017** — Verification-calibrated audit kickoff policies
+- **ADR-018** — Evaluator loop as first-class control-loop stage
+- **ADR-019** — Normalized decision outcomes for the evaluator loop
+- **ADR-020** — Copilot CLI augmentation model
+- **ADR-021** — Attribution-first decision records
+- **ADR-022** — Evaluated graph memory discipline
+- **ADR-023** — Harness-aware lab conditions and token-decline measurement
 
 ## Why This Architecture Is Proportional
 
@@ -433,6 +528,9 @@ value:
 - delegated-subtask briefing and handoff quality
 - evidence that the workflow actually saves recovery cost
 - controlled experiment evidence with scientific-style reporting
+- evaluation and decision discipline before context injection
+- attribution records that explain every evaluator-loop decision
+- Copilot CLI augmentation that proves value through token-decline evidence
 
 ## Open Review Focus
 
@@ -451,3 +549,12 @@ Before planning themes and stories, the most important review points are:
    while rich enough for meaningful statistical analysis
 6. how blinded evaluation should work in practice — which metrics can be
    blinded and which inherently reveal condition
+7. what minimum scoring dimensions the Context Evaluator needs to be useful
+   without becoming an arbitrary gate
+8. how conservative the Decision Engine's default thresholds should be to
+   reduce irrelevant injection without causing over-abstention
+9. how the evaluator loop should integrate with `graph workflow start` while
+   preserving backward compatibility for agents that do not use decision
+   metadata
+10. what the smallest lab experiment design is that can credibly demonstrate
+    token-decline evidence for the harness-aware condition

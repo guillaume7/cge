@@ -28,7 +28,7 @@ description: 'Code review checklist, security audit (OWASP Top 10), architecture
 
 ### 3. Architecture Compliance
 - Does it respect component boundaries from `docs/architecture/components.md`?
-- Does it follow patterns established in `docs/ADRs/`?
+- Does it follow patterns established in `docs/architecture/adrs/`?
 - Are dependencies between modules appropriate (no circular deps)?
 - Does it match the tech stack in `docs/architecture/tech-stack.md`?
 

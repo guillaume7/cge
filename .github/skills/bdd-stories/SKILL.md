@@ -133,7 +133,7 @@ The product-owner assigns a `size` during planning to set expectations:
 
 Spikes investigate risky technical assumptions before committing the full backlog.
 
-- **Output**: ADR updates in `docs/ADRs/` and/or a feasibility report — **not production code**
+- **Output**: ADR updates in `docs/architecture/adrs/` and/or a feasibility report — **not production code**
 - **Acceptance criteria**: Required (what question does the spike answer?)
 - **BDD scenarios**: Optional — spikes validate feasibility, not behavior
 - **Creators**: Product-owner (for business-driven investigations) or architect (for technical investigations)
