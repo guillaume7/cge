@@ -347,6 +347,7 @@ type reportFixtureRun struct {
 	IncompleteToken        bool
 	WorkflowStart          *workflow.StartResult
 	BaselinePromptMetadata map[string]any
+	AttributionSummary     *RunAttributionSummary
 }
 
 func writeReportSuiteFixture(t *testing.T, repoDir string) {
@@ -432,6 +433,10 @@ func writeReportRunFixture(t *testing.T, repoDir string, fixture reportFixtureRu
 		record.BaselinePromptMetadataRef = "artifacts/baseline-prompt-metadata.json"
 		writeJSONFixture(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", fixture.RunID, record.BaselinePromptMetadataRef), fixture.BaselinePromptMetadata)
 	}
+	if fixture.AttributionSummary != nil {
+		record.AttributionSummaryRef = "artifacts/attribution-summary.json"
+		writeJSONFixture(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", fixture.RunID, record.AttributionSummaryRef), fixture.AttributionSummary)
+	}
 	if fixture.IncompleteToken {
 		record.Telemetry.MeasurementStatus = "partial"
 		record.Telemetry.TotalTokens = nil
@@ -505,4 +510,380 @@ func reportContainsFinding(findings []ReportFinding, metric, groupValue string) 
 		}
 	}
 	return false
+}
+
+func TestServiceReportSurfacesHarnessAwareTokenDeclineComparisons(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager := initLabRepo(t)
+	service := NewService(manager)
+	if _, err := service.Init(context.Background(), repoDir); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	writeReportSuiteFixture(t, repoDir)
+
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-harness-1",
+		TaskID:          "task-001",
+		ConditionID:     "with-harness",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+		TotalTokens:     500,
+		WallClock:       60,
+		Success:         true,
+		Quality:         0.8,
+		Resumability:    0.7,
+	})
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-without-harness-1",
+		TaskID:          "task-001",
+		ConditionID:     "without-harness",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+		TotalTokens:     1000,
+		WallClock:       90,
+		Success:         true,
+		Quality:         0.8,
+		Resumability:    0.7,
+	})
+
+	service.NowForTest(func() time.Time { return time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC) })
+	result, err := service.Report(context.Background(), repoDir, ReportRequest{})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	m := result.Report.HarnessAwareMetrics
+	if !m.HasHarnessData {
+		t.Fatalf("harness_aware_metrics.has_harness_data = false, want true")
+	}
+	if m.TokenDecline.RunsWithHarness != 1 {
+		t.Fatalf("runs_with_harness = %d, want 1", m.TokenDecline.RunsWithHarness)
+	}
+	if m.TokenDecline.RunsWithoutHarness != 1 {
+		t.Fatalf("runs_without_harness = %d, want 1", m.TokenDecline.RunsWithoutHarness)
+	}
+	if m.TokenDecline.PrimaryComparison == nil {
+		t.Fatal("primary_comparison = nil, want token comparison between with-harness and without-harness")
+	}
+	if m.TokenDecline.PrimaryComparison.ConditionA != "with-harness" || m.TokenDecline.PrimaryComparison.ConditionB != "without-harness" {
+		t.Fatalf("primary_comparison conditions = %q/%q, want with-harness/without-harness",
+			m.TokenDecline.PrimaryComparison.ConditionA, m.TokenDecline.PrimaryComparison.ConditionB)
+	}
+	if m.TokenDecline.PrimaryComparison.SampleSize != 1 {
+		t.Fatalf("primary_comparison.sample_size = %d, want 1", m.TokenDecline.PrimaryComparison.SampleSize)
+	}
+	// delta = without - with = 1000 - 500 = 500 (positive = with-harness uses fewer tokens)
+	if m.TokenDecline.PrimaryComparison.MeanAbsoluteDelta != 500 {
+		t.Fatalf("mean_absolute_delta = %v, want 500", m.TokenDecline.PrimaryComparison.MeanAbsoluteDelta)
+	}
+	if len(m.TokenDecline.PerTaskDistributions) == 0 {
+		t.Fatal("per_task_distributions is empty, want at least one entry")
+	}
+}
+
+func TestServiceReportDetectsOverAbstentionWhenTokenSavingsCoincideWithQualityRegression(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager := initLabRepo(t)
+	service := NewService(manager)
+	if _, err := service.Init(context.Background(), repoDir); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	writeReportSuiteFixture(t, repoDir)
+
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-harness-abstain-1",
+		TaskID:          "task-001",
+		ConditionID:     "with-harness",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+		TotalTokens:     400, // fewer tokens than without-harness
+		WallClock:       60,
+		Success:         false,
+		Quality:         0.3, // lower quality → quality regression
+		Resumability:    0.3,
+		AttributionSummary: &RunAttributionSummary{
+			SchemaVersion:  SchemaVersion,
+			RunID:          "run-harness-abstain-1",
+			OutcomeCounts:  map[string]int{"abstain": 3, "proceed": 5},
+			TotalDecisions: 8,
+		},
+	})
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-without-harness-qa-1",
+		TaskID:          "task-001",
+		ConditionID:     "without-harness",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+		TotalTokens:     1000, // more tokens
+		WallClock:       90,
+		Success:         true,
+		Quality:         0.9, // higher quality
+		Resumability:    0.8,
+	})
+
+	service.NowForTest(func() time.Time { return time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC) })
+	result, err := service.Report(context.Background(), repoDir, ReportRequest{})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	oa := result.Report.HarnessAwareMetrics.OverAbstentionAnalysis
+	if !oa.TokenSavingsPresent {
+		t.Fatal("token_savings_present = false, want true when harness tokens < without-harness tokens")
+	}
+	if !oa.QualityRegressionPresent {
+		t.Fatal("quality_regression_present = false, want true when harness quality < without-harness quality")
+	}
+	if !oa.OverAbstentionWarning {
+		t.Fatal("over_abstention_warning = false, want true when both token savings and quality regression present")
+	}
+	if oa.AbstentionCount != 3 {
+		t.Fatalf("abstention_count = %d, want 3", oa.AbstentionCount)
+	}
+}
+
+func TestServiceReportNoOverAbstentionFlagWhenQualityHolds(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager := initLabRepo(t)
+	service := NewService(manager)
+	if _, err := service.Init(context.Background(), repoDir); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	writeReportSuiteFixture(t, repoDir)
+
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-harness-good-1",
+		TaskID:          "task-001",
+		ConditionID:     "with-harness",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+		TotalTokens:     500, // fewer tokens
+		WallClock:       60,
+		Success:         true,
+		Quality:         0.9, // better quality — no regression
+		Resumability:    0.8,
+	})
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-without-harness-good-1",
+		TaskID:          "task-001",
+		ConditionID:     "without-harness",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+		TotalTokens:     1000, // more tokens
+		WallClock:       90,
+		Success:         true,
+		Quality:         0.7, // lower quality
+		Resumability:    0.6,
+	})
+
+	service.NowForTest(func() time.Time { return time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC) })
+	result, err := service.Report(context.Background(), repoDir, ReportRequest{})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	oa := result.Report.HarnessAwareMetrics.OverAbstentionAnalysis
+	if !oa.TokenSavingsPresent {
+		t.Fatal("token_savings_present = false, want true")
+	}
+	if oa.QualityRegressionPresent {
+		t.Fatal("quality_regression_present = true, want false when harness quality >= without-harness quality")
+	}
+	if oa.OverAbstentionWarning {
+		t.Fatal("over_abstention_warning = true, want false when quality does not regress")
+	}
+}
+
+func TestServiceReportAggregatesAttributionOutcomeDistribution(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager := initLabRepo(t)
+	service := NewService(manager)
+	if _, err := service.Init(context.Background(), repoDir); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	writeReportSuiteFixture(t, repoDir)
+
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-attr-1",
+		TaskID:          "task-001",
+		ConditionID:     "with-harness",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+		TotalTokens:     600,
+		WallClock:       60,
+		Success:         true,
+		Quality:         0.8,
+		Resumability:    0.7,
+		AttributionSummary: &RunAttributionSummary{
+			SchemaVersion:  SchemaVersion,
+			RunID:          "run-attr-1",
+			OutcomeCounts:  map[string]int{"proceed": 7, "abstain": 2, "defer": 1},
+			TotalDecisions: 10,
+		},
+	})
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-attr-2",
+		TaskID:          "task-002",
+		ConditionID:     "with-harness",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+		TotalTokens:     700,
+		WallClock:       65,
+		Success:         true,
+		Quality:         0.75,
+		Resumability:    0.65,
+		AttributionSummary: &RunAttributionSummary{
+			SchemaVersion:  SchemaVersion,
+			RunID:          "run-attr-2",
+			OutcomeCounts:  map[string]int{"proceed": 5, "abstain": 3},
+			TotalDecisions: 8,
+		},
+	})
+	// One harness run without attribution (should be counted in TotalRunsWithoutAttribution).
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-attr-3",
+		TaskID:          "task-001",
+		ConditionID:     "with-harness",
+		Model:           "model-b",
+		SessionTopology: "delegated-parallel",
+		Seed:            99,
+		TotalTokens:     550,
+		WallClock:       55,
+		Success:         true,
+		Quality:         0.78,
+		Resumability:    0.68,
+	})
+
+	service.NowForTest(func() time.Time { return time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC) })
+	result, err := service.Report(context.Background(), repoDir, ReportRequest{})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	agg := result.Report.HarnessAwareMetrics.AttributionAggregation
+	if agg.TotalRunsWithAttribution != 2 {
+		t.Fatalf("total_runs_with_attribution = %d, want 2", agg.TotalRunsWithAttribution)
+	}
+	if agg.TotalRunsWithoutAttribution != 1 {
+		t.Fatalf("total_runs_without_attribution = %d, want 1", agg.TotalRunsWithoutAttribution)
+	}
+	if agg.OverallOutcomeDistribution == nil {
+		t.Fatal("overall_outcome_distribution = nil, want aggregated outcome counts")
+	}
+	// proceed: 7 + 5 = 12, abstain: 2 + 3 = 5, defer: 1
+	if got := agg.OverallOutcomeDistribution["proceed"].Count; got != 12 {
+		t.Fatalf("overall proceed count = %d, want 12", got)
+	}
+	if got := agg.OverallOutcomeDistribution["abstain"].Count; got != 5 {
+		t.Fatalf("overall abstain count = %d, want 5", got)
+	}
+}
+
+func TestServiceReportPerFamilyDecisionPatterns(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager := initLabRepo(t)
+	service := NewService(manager)
+	if _, err := service.Init(context.Background(), repoDir); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	// Custom suite with two different task families.
+	writeJSONFixture(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, repo.LabSuiteManifestName), SuiteManifest{
+		SchemaVersion: SchemaVersion,
+		SuiteID:       "delegated-workflow-evidence-v1",
+		Tasks: []SuiteTask{
+			{
+				TaskID:                "task-fam-a",
+				Family:                "family-alpha",
+				Description:           "alpha task",
+				AcceptanceCriteriaRef: "tasks/task-fam-a/criteria.md",
+			},
+			{
+				TaskID:                "task-fam-b",
+				Family:                "family-beta",
+				Description:           "beta task",
+				AcceptanceCriteriaRef: "tasks/task-fam-b/criteria.md",
+			},
+		},
+	})
+
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-fam-alpha-1",
+		TaskID:          "task-fam-a",
+		ConditionID:     "with-harness",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            1,
+		TotalTokens:     500,
+		WallClock:       60,
+		Success:         true,
+		Quality:         0.8,
+		Resumability:    0.7,
+		AttributionSummary: &RunAttributionSummary{
+			SchemaVersion:  SchemaVersion,
+			RunID:          "run-fam-alpha-1",
+			OutcomeCounts:  map[string]int{"proceed": 8, "abstain": 2},
+			TotalDecisions: 10,
+		},
+	})
+	writeReportRunFixture(t, repoDir, reportFixtureRun{
+		RunID:           "run-fam-beta-1",
+		TaskID:          "task-fam-b",
+		ConditionID:     "with-harness",
+		Model:           "model-a",
+		SessionTopology: "delegated-parallel",
+		Seed:            2,
+		TotalTokens:     600,
+		WallClock:       70,
+		Success:         true,
+		Quality:         0.75,
+		Resumability:    0.65,
+		AttributionSummary: &RunAttributionSummary{
+			SchemaVersion:  SchemaVersion,
+			RunID:          "run-fam-beta-1",
+			OutcomeCounts:  map[string]int{"proceed": 3, "abstain": 7},
+			TotalDecisions: 10,
+		},
+	})
+
+	service.NowForTest(func() time.Time { return time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC) })
+	result, err := service.Report(context.Background(), repoDir, ReportRequest{})
+	if err != nil {
+		t.Fatalf("Report returned error: %v", err)
+	}
+
+	perFamily := result.Report.HarnessAwareMetrics.AttributionAggregation.PerFamilyOutcomes
+	if len(perFamily) != 2 {
+		t.Fatalf("per_family_outcomes count = %d, want 2 (one per family)", len(perFamily))
+	}
+	// Sorted by family name: family-alpha, family-beta.
+	if perFamily[0].TaskFamily != "family-alpha" {
+		t.Fatalf("per_family_outcomes[0].task_family = %q, want family-alpha", perFamily[0].TaskFamily)
+	}
+	if perFamily[1].TaskFamily != "family-beta" {
+		t.Fatalf("per_family_outcomes[1].task_family = %q, want family-beta", perFamily[1].TaskFamily)
+	}
+	if got := perFamily[0].OutcomeDistribution["abstain"].Count; got != 2 {
+		t.Fatalf("family-alpha abstain count = %d, want 2", got)
+	}
+	if got := perFamily[1].OutcomeDistribution["abstain"].Count; got != 7 {
+		t.Fatalf("family-beta abstain count = %d, want 7", got)
+	}
 }

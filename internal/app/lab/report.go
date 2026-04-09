@@ -50,6 +50,7 @@ type ReportArtifact struct {
 	PairedComparisons       []PairedComparison             `json:"paired_comparisons"`
 	GroupedComparisons      []GroupedComparison            `json:"grouped_comparisons"`
 	VerificationAttribution VerificationAttributionSummary `json:"verification_attribution"`
+	HarnessAwareMetrics     HarnessAwareMetrics            `json:"harness_aware_metrics"`
 	Summary                 ReportSummary                  `json:"summary"`
 	Limitations             []string                       `json:"limitations"`
 }
@@ -182,6 +183,69 @@ type ReportFinding struct {
 	Reason          string  `json:"reason"`
 }
 
+// HarnessAwareMetrics captures token-decline comparisons, over-abstention analysis,
+// and attribution aggregation for runs using harness-aware conditions.
+type HarnessAwareMetrics struct {
+	HasHarnessData         bool                       `json:"has_harness_data"`
+	TokenDecline           HarnessTokenDeclineSection `json:"token_decline"`
+	OverAbstentionAnalysis OverAbstentionAnalysis     `json:"over_abstention_analysis"`
+	AttributionAggregation AttributionAggregation     `json:"attribution_aggregation"`
+}
+
+type HarnessTokenDeclineSection struct {
+	RunsWithHarness       int                            `json:"runs_with_harness"`
+	RunsWithoutHarness    int                            `json:"runs_without_harness"`
+	RunsGraphOnly         int                            `json:"runs_graph_only"`
+	PrimaryComparison     *HarnessTokenComparison        `json:"primary_comparison,omitempty"`
+	SecondaryComparison   *HarnessTokenComparison        `json:"secondary_comparison,omitempty"`
+	PerTaskDistributions  []HarnessTaskTokenDistribution `json:"per_task_distributions"`
+	Limitations           []string                       `json:"limitations"`
+}
+
+type HarnessTokenComparison struct {
+	ConditionA           string    `json:"condition_a"`
+	ConditionB           string    `json:"condition_b"`
+	SampleSize           int       `json:"sample_size"`
+	MeanAbsoluteDelta    float64   `json:"mean_absolute_delta"`
+	MeanPercentDelta     float64   `json:"mean_percent_delta"`
+	ConfidenceInterval95 []float64 `json:"confidence_interval_95,omitempty"`
+	Note                 string    `json:"note,omitempty"`
+}
+
+type HarnessTaskTokenDistribution struct {
+	TaskID                 string             `json:"task_id"`
+	TaskFamily             string             `json:"task_family"`
+	MeanTokensPerCondition map[string]float64 `json:"mean_tokens_per_condition"`
+}
+
+type OverAbstentionAnalysis struct {
+	WithHarnessRunCount      int     `json:"with_harness_run_count"`
+	AbstentionCount          int     `json:"abstention_count"`
+	AbstentionRate           float64 `json:"abstention_rate"`
+	TokenSavingsPresent      bool    `json:"token_savings_present"`
+	QualityRegressionPresent bool    `json:"quality_regression_present"`
+	OverAbstentionWarning    bool    `json:"over_abstention_warning"`
+	Explanation              string  `json:"explanation"`
+}
+
+type AttributionAggregation struct {
+	TotalRunsWithAttribution    int                     `json:"total_runs_with_attribution"`
+	TotalRunsWithoutAttribution int                     `json:"total_runs_without_attribution"`
+	OverallOutcomeDistribution  map[string]OutcomeCount `json:"overall_outcome_distribution"`
+	PerFamilyOutcomes           []FamilyOutcomePattern  `json:"per_family_outcomes"`
+}
+
+type OutcomeCount struct {
+	Count      int     `json:"count"`
+	Percentage float64 `json:"percentage"`
+}
+
+type FamilyOutcomePattern struct {
+	TaskFamily          string                  `json:"task_family"`
+	RunCount            int                     `json:"run_count"`
+	OutcomeDistribution map[string]OutcomeCount `json:"outcome_distribution"`
+}
+
 type reportRun struct {
 	record                 RunRecord
 	task                   SuiteTask
@@ -191,6 +255,7 @@ type reportRun struct {
 	evaluationCount        int
 	workflowStart          *workflow.StartResult
 	baselinePromptMetadata map[string]any
+	attributionSummary     *RunAttributionSummary
 }
 
 type pairKey struct {
@@ -403,6 +468,7 @@ func buildReportArtifact(
 		PairedComparisons:       pairedComparisons,
 		GroupedComparisons:      groupedComparisons,
 		VerificationAttribution: verificationAttribution,
+		HarnessAwareMetrics:     buildHarnessAwareMetrics(selectedRuns),
 		Summary: ReportSummary{
 			Warnings:        warnings,
 			NullResults:     collectFindings(pairedComparisons, groupedComparisons, true),
@@ -682,6 +748,14 @@ func loadReportRuns(runsPath string, suite SuiteManifest, conditions ConditionsM
 		if err != nil {
 			return nil, err
 		}
+		attributionSummaryPath := ""
+		if record.AttributionSummaryRef != "" {
+			attributionSummaryPath = filepath.Join(filepath.Dir(path), record.AttributionSummaryRef)
+		}
+		attributionSummary, err := loadAttributionSummary(attributionSummaryPath)
+		if err != nil {
+			return nil, err
+		}
 
 		items = append(items, reportRun{
 			record:                 record,
@@ -692,6 +766,7 @@ func loadReportRuns(runsPath string, suite SuiteManifest, conditions ConditionsM
 			evaluationCount:        count,
 			workflowStart:          workflowStart,
 			baselinePromptMetadata: baselinePromptMetadata,
+			attributionSummary:     attributionSummary,
 		})
 	}
 
@@ -733,6 +808,24 @@ func loadGenericArtifact(path string) (map[string]any, error) {
 		return nil, fmt.Errorf("decode artifact %s: %w", path, err)
 	}
 	return payload, nil
+}
+
+func loadAttributionSummary(path string) (*RunAttributionSummary, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("read attribution summary %s: %w", path, err)
+	}
+	var summary RunAttributionSummary
+	if err := json.Unmarshal(data, &summary); err != nil {
+		return nil, fmt.Errorf("decode attribution summary %s: %w", path, err)
+	}
+	return &summary, nil
 }
 
 func listRunRecordPaths(runsPath string) ([]string, error) {
@@ -1429,4 +1522,339 @@ func dedupeReportStrings(values []string) []string {
 		deduped = append(deduped, value)
 	}
 	return deduped
+}
+
+func buildHarnessAwareMetrics(selectedRuns []reportRun) HarnessAwareMetrics {
+	var harnessRuns, withoutHarnessRuns, graphOnlyRuns []reportRun
+	for _, r := range selectedRuns {
+		switch r.condition.WorkflowMode {
+		case WorkflowModeWithHarness:
+			harnessRuns = append(harnessRuns, r)
+		case WorkflowModeWithoutHarness:
+			withoutHarnessRuns = append(withoutHarnessRuns, r)
+		case WorkflowModeGraphOnly:
+			graphOnlyRuns = append(graphOnlyRuns, r)
+		}
+	}
+
+	if len(harnessRuns) == 0 && len(withoutHarnessRuns) == 0 && len(graphOnlyRuns) == 0 {
+		return HarnessAwareMetrics{HasHarnessData: false}
+	}
+
+	tokenDecline := buildHarnessTokenDecline(harnessRuns, withoutHarnessRuns, graphOnlyRuns)
+	overAbstention := buildOverAbstentionAnalysis(harnessRuns, withoutHarnessRuns)
+	attribution := buildAttributionAggregation(harnessRuns)
+
+	return HarnessAwareMetrics{
+		HasHarnessData:         true,
+		TokenDecline:           tokenDecline,
+		OverAbstentionAnalysis: overAbstention,
+		AttributionAggregation: attribution,
+	}
+}
+
+func buildHarnessTokenDecline(harnessRuns, withoutHarnessRuns, graphOnlyRuns []reportRun) HarnessTokenDeclineSection {
+	limitations := []string{}
+
+	primary := buildHarnessTokenComparison("with-harness", "without-harness", harnessRuns, withoutHarnessRuns, &limitations)
+	secondary := buildHarnessTokenComparison("with-harness", "graph-only", harnessRuns, graphOnlyRuns, &limitations)
+	perTask := buildHarnessTaskTokenDistributions(harnessRuns, withoutHarnessRuns, graphOnlyRuns)
+
+	return HarnessTokenDeclineSection{
+		RunsWithHarness:      len(harnessRuns),
+		RunsWithoutHarness:   len(withoutHarnessRuns),
+		RunsGraphOnly:        len(graphOnlyRuns),
+		PrimaryComparison:    primary,
+		SecondaryComparison:  secondary,
+		PerTaskDistributions: perTask,
+		Limitations:          limitations,
+	}
+}
+
+func buildHarnessTokenComparison(condA, condB string, aRuns, bRuns []reportRun, limitations *[]string) *HarnessTokenComparison {
+	if len(aRuns) == 0 || len(bRuns) == 0 {
+		return nil
+	}
+
+	// Build per-task mean tokens for each side, pair by taskID.
+	aTokens := harnessRunTokenMeans(aRuns)
+	bTokens := harnessRunTokenMeans(bRuns)
+
+	deltas := []float64{}
+	percentDeltas := []float64{}
+	for taskID, aVal := range aTokens {
+		bVal, ok := bTokens[taskID]
+		if !ok {
+			continue
+		}
+		if aVal == 0 || bVal == 0 {
+			continue
+		}
+		delta := bVal - aVal // positive = condA uses fewer tokens than condB
+		deltas = append(deltas, delta)
+		percentDeltas = append(percentDeltas, delta/bVal*100)
+	}
+
+	if len(deltas) == 0 {
+		*limitations = append(*limitations, fmt.Sprintf("no paired token observations found for %s vs %s", condA, condB))
+		return nil
+	}
+
+	meanAbs := meanFloat64(deltas)
+	meanPct := meanFloat64(percentDeltas)
+
+	comp := &HarnessTokenComparison{
+		ConditionA:        condA,
+		ConditionB:        condB,
+		SampleSize:        len(deltas),
+		MeanAbsoluteDelta: meanAbs,
+		MeanPercentDelta:  meanPct,
+	}
+
+	if len(deltas) >= 10 {
+		sd := sampleStandardDeviation(deltas, meanAbs)
+		margin := 1.96 * sd / math.Sqrt(float64(len(deltas)))
+		comp.ConfidenceInterval95 = []float64{meanAbs - margin, meanAbs + margin}
+	} else {
+		comp.Note = fmt.Sprintf("only %d paired observations; 95%% CI requires at least 10", len(deltas))
+	}
+
+	return comp
+}
+
+// harnessRunTokenMeans returns mean total tokens per task for runs that have complete token telemetry.
+func harnessRunTokenMeans(runs []reportRun) map[string]float64 {
+	taskTokens := map[string][]float64{}
+	for _, r := range runs {
+		if r.record.Telemetry == nil || r.record.Telemetry.MeasurementStatus != "complete" {
+			continue
+		}
+		if r.record.Telemetry.TotalTokens == nil {
+			continue
+		}
+		taskTokens[r.record.TaskID] = append(taskTokens[r.record.TaskID], float64(*r.record.Telemetry.TotalTokens))
+	}
+	means := make(map[string]float64, len(taskTokens))
+	for taskID, vals := range taskTokens {
+		means[taskID] = meanFloat64(vals)
+	}
+	return means
+}
+
+func buildHarnessTaskTokenDistributions(harnessRuns, withoutHarnessRuns, graphOnlyRuns []reportRun) []HarnessTaskTokenDistribution {
+	taskFamilies := map[string]string{}
+	allConditionRuns := map[string][]reportRun{
+		WorkflowModeWithHarness:    harnessRuns,
+		WorkflowModeWithoutHarness: withoutHarnessRuns,
+		WorkflowModeGraphOnly:      graphOnlyRuns,
+	}
+
+	// Collect all task IDs across all conditions.
+	taskSet := map[string]struct{}{}
+	for _, runs := range allConditionRuns {
+		for _, r := range runs {
+			taskSet[r.record.TaskID] = struct{}{}
+			if _, ok := taskFamilies[r.record.TaskID]; !ok {
+				taskFamilies[r.record.TaskID] = r.task.Family
+			}
+		}
+	}
+
+	tasks := make([]string, 0, len(taskSet))
+	for taskID := range taskSet {
+		tasks = append(tasks, taskID)
+	}
+	sort.Strings(tasks)
+
+	distributions := make([]HarnessTaskTokenDistribution, 0, len(tasks))
+	for _, taskID := range tasks {
+		meanTokens := map[string]float64{}
+		for mode, runs := range allConditionRuns {
+			var taskRuns []reportRun
+			for _, r := range runs {
+				if r.record.TaskID == taskID {
+					taskRuns = append(taskRuns, r)
+				}
+			}
+			if tokens := harnessRunTokenMeans(taskRuns); len(tokens) > 0 {
+				if v, ok := tokens[taskID]; ok {
+					meanTokens[mode] = v
+				}
+			}
+		}
+		if len(meanTokens) > 0 {
+			distributions = append(distributions, HarnessTaskTokenDistribution{
+				TaskID:                 taskID,
+				TaskFamily:             taskFamilies[taskID],
+				MeanTokensPerCondition: meanTokens,
+			})
+		}
+	}
+	return distributions
+}
+
+func buildOverAbstentionAnalysis(harnessRuns, withoutHarnessRuns []reportRun) OverAbstentionAnalysis {
+	if len(harnessRuns) == 0 {
+		return OverAbstentionAnalysis{}
+	}
+
+	// Count abstentions from attribution summary outcomes.
+	abstentionCount := 0
+	for _, r := range harnessRuns {
+		if r.attributionSummary != nil {
+			abstentionCount += r.attributionSummary.OutcomeCounts["abstain"]
+		}
+	}
+	abstentionRate := float64(abstentionCount) / float64(len(harnessRuns))
+
+	// Determine token savings: mean tokens with-harness < mean tokens without-harness.
+	tokenSavings := false
+	harnessTokenMeans := harnessRunTokenMeans(harnessRuns)
+	withoutTokenMeans := harnessRunTokenMeans(withoutHarnessRuns)
+	if len(harnessTokenMeans) > 0 && len(withoutTokenMeans) > 0 {
+		var harnessMeanTotal, withoutMeanTotal float64
+		var count int
+		for taskID, hVal := range harnessTokenMeans {
+			if wVal, ok := withoutTokenMeans[taskID]; ok {
+				harnessMeanTotal += hVal
+				withoutMeanTotal += wVal
+				count++
+			}
+		}
+		if count > 0 {
+			tokenSavings = harnessMeanTotal/float64(count) < withoutMeanTotal/float64(count)
+		}
+	}
+
+	// Determine quality regression: mean quality with-harness < mean quality without-harness.
+	qualityRegression := false
+	harnessQuality := harnessRunQualityMeans(harnessRuns)
+	withoutQuality := harnessRunQualityMeans(withoutHarnessRuns)
+	if len(harnessQuality) > 0 && len(withoutQuality) > 0 {
+		var harnessQualityTotal, withoutQualityTotal float64
+		var count int
+		for taskID, hVal := range harnessQuality {
+			if wVal, ok := withoutQuality[taskID]; ok {
+				harnessQualityTotal += hVal
+				withoutQualityTotal += wVal
+				count++
+			}
+		}
+		if count > 0 {
+			qualityRegression = harnessQualityTotal/float64(count) < withoutQualityTotal/float64(count)
+		}
+	}
+
+	overAbstentionWarning := tokenSavings && qualityRegression
+
+	explanation := "token savings and quality regression not both present; no over-abstention warning"
+	if overAbstentionWarning {
+		explanation = fmt.Sprintf(
+			"with-harness runs show lower token consumption but also lower quality scores than without-harness runs (abstention rate: %.1f%%); this may indicate over-abstention",
+			abstentionRate*100,
+		)
+	}
+
+	return OverAbstentionAnalysis{
+		WithHarnessRunCount:      len(harnessRuns),
+		AbstentionCount:          abstentionCount,
+		AbstentionRate:           abstentionRate,
+		TokenSavingsPresent:      tokenSavings,
+		QualityRegressionPresent: qualityRegression,
+		OverAbstentionWarning:    overAbstentionWarning,
+		Explanation:              explanation,
+	}
+}
+
+// harnessRunQualityMeans returns mean quality score per task for runs with evaluation scores.
+func harnessRunQualityMeans(runs []reportRun) map[string]float64 {
+	taskScores := map[string][]float64{}
+	for _, r := range runs {
+		if r.latestEvaluation == nil || r.latestEvaluation.Scores == nil {
+			continue
+		}
+		if r.latestEvaluation.Scores.QualityScore == nil {
+			continue
+		}
+		taskScores[r.record.TaskID] = append(taskScores[r.record.TaskID], *r.latestEvaluation.Scores.QualityScore)
+	}
+	means := make(map[string]float64, len(taskScores))
+	for taskID, vals := range taskScores {
+		means[taskID] = meanFloat64(vals)
+	}
+	return means
+}
+
+func buildAttributionAggregation(harnessRuns []reportRun) AttributionAggregation {
+	withAttribution := 0
+	withoutAttribution := 0
+	overallCounts := map[string]int{}
+	familyCounts := map[string]map[string]int{}
+	familyRunCounts := map[string]int{}
+
+	for _, r := range harnessRuns {
+		if r.attributionSummary == nil {
+			withoutAttribution++
+			continue
+		}
+		withAttribution++
+		family := r.task.Family
+		if _, ok := familyCounts[family]; !ok {
+			familyCounts[family] = map[string]int{}
+		}
+		familyRunCounts[family]++
+		for outcome, count := range r.attributionSummary.OutcomeCounts {
+			overallCounts[outcome] += count
+			familyCounts[family][outcome] += count
+		}
+	}
+
+	totalDecisions := 0
+	for _, count := range overallCounts {
+		totalDecisions += count
+	}
+
+	overallDist := make(map[string]OutcomeCount, len(overallCounts))
+	for outcome, count := range overallCounts {
+		pct := 0.0
+		if totalDecisions > 0 {
+			pct = float64(count) / float64(totalDecisions) * 100
+		}
+		overallDist[outcome] = OutcomeCount{Count: count, Percentage: pct}
+	}
+
+	families := make([]string, 0, len(familyCounts))
+	for family := range familyCounts {
+		families = append(families, family)
+	}
+	sort.Strings(families)
+
+	perFamily := make([]FamilyOutcomePattern, 0, len(families))
+	for _, family := range families {
+		counts := familyCounts[family]
+		familyTotal := 0
+		for _, c := range counts {
+			familyTotal += c
+		}
+		dist := make(map[string]OutcomeCount, len(counts))
+		for outcome, count := range counts {
+			pct := 0.0
+			if familyTotal > 0 {
+				pct = float64(count) / float64(familyTotal) * 100
+			}
+			dist[outcome] = OutcomeCount{Count: count, Percentage: pct}
+		}
+		perFamily = append(perFamily, FamilyOutcomePattern{
+			TaskFamily:          family,
+			RunCount:            familyRunCounts[family],
+			OutcomeDistribution: dist,
+		})
+	}
+
+	return AttributionAggregation{
+		TotalRunsWithAttribution:    withAttribution,
+		TotalRunsWithoutAttribution: withoutAttribution,
+		OverallOutcomeDistribution:  overallDist,
+		PerFamilyOutcomes:           perFamily,
+	}
 }

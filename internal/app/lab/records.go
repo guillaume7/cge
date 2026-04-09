@@ -28,6 +28,7 @@ type RunRecord struct {
 	KickoffInputsRef          string        `json:"kickoff_inputs_ref"`
 	WorkflowStartResponseRef  string        `json:"workflow_start_response_ref,omitempty"`
 	BaselinePromptMetadataRef string        `json:"baseline_prompt_metadata_ref,omitempty"`
+	AttributionSummaryRef     string        `json:"attribution_summary_ref,omitempty"`
 	SessionStructureRef       string        `json:"session_structure_ref"`
 	WritebackOutputsRef       string        `json:"writeback_outputs_ref"`
 	OutcomeArtifactsRef       string        `json:"outcome_artifacts_ref"`
@@ -174,6 +175,9 @@ func validateRunRecord(recordsPath string, suite SuiteManifest, conditions Condi
 	}
 	if record.BaselinePromptMetadataRef != "" {
 		validateArtifactReference("baseline_prompt_metadata_ref", record.BaselinePromptMetadataRef, &violations)
+	}
+	if record.AttributionSummaryRef != "" {
+		validateArtifactReference("attribution_summary_ref", record.AttributionSummaryRef, &violations)
 	}
 	validateArtifactReference("session_structure_ref", record.SessionStructureRef, &violations)
 	validateArtifactReference("writeback_outputs_ref", record.WritebackOutputsRef, &violations)

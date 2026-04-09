@@ -21,8 +21,11 @@ import (
 const SchemaVersion = "v1"
 
 const (
-	WorkflowModeGraphBacked = "graph_backed"
-	WorkflowModeBaseline    = "baseline"
+	WorkflowModeGraphBacked    = "graph_backed"
+	WorkflowModeBaseline       = "baseline"
+	WorkflowModeWithHarness    = "with_harness"
+	WorkflowModeGraphOnly      = "graph_only"
+	WorkflowModeWithoutHarness = "without_harness"
 
 	BlockingFactorTaskFamily      = "task_family"
 	BlockingFactorModel           = "model"
@@ -285,6 +288,21 @@ func defaultConditionsManifest() ConditionsManifest {
 				WorkflowMode: WorkflowModeBaseline,
 				Description:  "no graph context; standard delegation only",
 			},
+			{
+				ConditionID:  "with-harness",
+				WorkflowMode: WorkflowModeWithHarness,
+				Description:  "full CGE pipeline including retrieval, evaluation, decision, and attribution",
+			},
+			{
+				ConditionID:  "without-harness",
+				WorkflowMode: WorkflowModeWithoutHarness,
+				Description:  "no CGE involvement; standard Copilot CLI only",
+			},
+			{
+				ConditionID:  "graph-only",
+				WorkflowMode: WorkflowModeGraphOnly,
+				Description:  "graph retrieval and projection without the evaluator loop (pre-VP8 baseline)",
+			},
 		},
 		BlockingFactors: []string{BlockingFactorTaskFamily, BlockingFactorModel, BlockingFactorSessionTopology},
 	}
@@ -448,7 +466,8 @@ func validateConditionsManifest(path string, manifest ConditionsManifest) error 
 
 func isAllowedWorkflowMode(mode string) bool {
 	switch mode {
-	case WorkflowModeGraphBacked, WorkflowModeBaseline:
+	case WorkflowModeGraphBacked, WorkflowModeBaseline,
+		WorkflowModeWithHarness, WorkflowModeGraphOnly, WorkflowModeWithoutHarness:
 		return true
 	default:
 		return false

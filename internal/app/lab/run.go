@@ -62,11 +62,20 @@ type RunParameters struct {
 }
 
 type RunExecution struct {
-	WorkflowMode string `json:"workflow_mode"`
-	GraphBacked  bool   `json:"graph_backed"`
-	KickoffUsed  bool   `json:"kickoff_used"`
-	HandoffUsed  bool   `json:"handoff_used"`
-	RecordPath   string `json:"record_path,omitempty"`
+	WorkflowMode           string `json:"workflow_mode"`
+	GraphBacked            bool   `json:"graph_backed"`
+	UsesWorkflowPrimitives bool   `json:"uses_workflow_primitives"`
+	KickoffUsed            bool   `json:"kickoff_used"`
+	HandoffUsed            bool   `json:"handoff_used"`
+	RecordPath             string `json:"record_path,omitempty"`
+}
+
+// RunAttributionSummary captures aggregated attribution decision outcomes for a run.
+type RunAttributionSummary struct {
+	SchemaVersion  string         `json:"schema_version"`
+	RunID          string         `json:"run_id"`
+	OutcomeCounts  map[string]int `json:"outcome_counts"`
+	TotalDecisions int            `json:"total_decisions"`
 }
 
 type BatchExecution struct {
@@ -252,9 +261,13 @@ func (s *Service) runSingle(ctx context.Context, startDir string, workspace repo
 	startedAt := s.now().UTC()
 	runID := nextRunID(filepath.Join(workspace.WorkspacePath, repo.LabDirName, "runs"), startedAt)
 
+	usesWorkflowPrimitives := condition.WorkflowMode == WorkflowModeGraphBacked ||
+		condition.WorkflowMode == WorkflowModeWithHarness ||
+		condition.WorkflowMode == WorkflowModeGraphOnly
 	execution := RunExecution{
-		WorkflowMode: condition.WorkflowMode,
-		GraphBacked:  condition.WorkflowMode == WorkflowModeGraphBacked,
+		WorkflowMode:           condition.WorkflowMode,
+		GraphBacked:            condition.WorkflowMode == WorkflowModeGraphBacked,
+		UsesWorkflowPrimitives: usesWorkflowPrimitives,
 	}
 	var executionTelemetry *workflow.ExecutionTelemetry
 	var startResult *workflow.StartResult
@@ -267,7 +280,7 @@ func (s *Service) runSingle(ctx context.Context, startDir string, workspace repo
 		}
 	}
 
-	if execution.GraphBacked {
+	if execution.UsesWorkflowPrimitives {
 		start, err := s.workflowRunner.Start(ctx, startDir, task.Description, defaultKickoffMaxTokens)
 		if err != nil {
 			return RunResult{}, err
@@ -680,7 +693,7 @@ func buildRunTelemetry(
 	outcomeProvided bool,
 ) *RunTelemetry {
 	delegatedSessions := 1
-	if execution.GraphBacked {
+	if execution.UsesWorkflowPrimitives {
 		delegatedSessions = 2
 	}
 
@@ -693,7 +706,7 @@ func buildRunTelemetry(
 		IncompleteReasons: []string{"execution_usage_not_supplied"},
 	}
 	if !outcomeProvided {
-		if execution.GraphBacked {
+		if execution.UsesWorkflowPrimitives {
 			telemetry.IncompleteReasons = []string{"synthetic_finish_payload_carries_no_execution_usage"}
 		} else {
 			telemetry.IncompleteReasons = []string{"baseline_run_did_not_receive_execution_outcome"}
@@ -747,7 +760,7 @@ func buildRunArtifacts(
 		"kickoff_used":     execution.KickoffUsed,
 		"handoff_used":     execution.HandoffUsed,
 	}
-	if execution.GraphBacked {
+	if execution.UsesWorkflowPrimitives {
 		sessionStructure["delegated_sessions"] = 2
 	} else {
 		sessionStructure["delegated_sessions"] = 1
@@ -886,21 +899,21 @@ func boolPointer(value bool) *bool {
 }
 
 func workflowStartArtifactRef(execution RunExecution) string {
-	if execution.GraphBacked && execution.KickoffUsed {
+	if execution.UsesWorkflowPrimitives && execution.KickoffUsed {
 		return "artifacts/workflow-start-response.json"
 	}
 	return ""
 }
 
 func baselinePromptArtifactRef(execution RunExecution) string {
-	if !execution.GraphBacked {
+	if !execution.UsesWorkflowPrimitives {
 		return "artifacts/baseline-prompt-metadata.json"
 	}
 	return ""
 }
 
 func buildBaselinePromptMetadata(task SuiteTask, request RunRequest, condition Condition, execution RunExecution) any {
-	if execution.GraphBacked {
+	if execution.UsesWorkflowPrimitives {
 		return nil
 	}
 	description := strings.TrimSpace(task.Description)
