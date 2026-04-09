@@ -1,6 +1,6 @@
 backlog:
   project: cognitive-graph-engine
-  last-updated: 2026-03-28T11:55:00Z
+  last-updated: 2026-04-09T08:37:57Z
   themes:
   - id: TH1
     name: Cognitive Graph Engine MVP
@@ -505,7 +505,7 @@ backlog:
         - TH7.E3.US2
   - id: TH8
     name: Copilot-First Evaluator Loop and Decision Harness
-    status: todo
+    status: in-progress
     locked: false
     vision-ref: docs/vision_of_product/VP8-cge-2-new-architecture/
     depends-on:
@@ -513,23 +513,23 @@ backlog:
     epics:
     - id: TH8.E1
       name: Context Evaluator Foundation
-      status: todo
+      status: done
       depends-on: []
       stories:
       - id: TH8.E1.US1
         title: Score candidate context bundles on relevance, consistency, and usefulness
-        status: todo
+        status: done
         file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E1-context-evaluator-foundation/stories/US1-score-candidate-context-bundles.md
         depends-on: []
       - id: TH8.E1.US2
         title: Compute composite confidence from evaluation dimensions
-        status: todo
+        status: done
         file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E1-context-evaluator-foundation/stories/US2-compute-composite-confidence.md
         depends-on:
         - TH8.E1.US1
       - id: TH8.E1.US3
         title: Evaluate candidate task outputs for iterative critique
-        status: todo
+        status: done
         file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E1-context-evaluator-foundation/stories/US3-evaluate-candidate-task-outputs.md
         depends-on:
         - TH8.E1.US2

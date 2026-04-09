@@ -309,6 +309,10 @@ func normalizeDocument(doc Document) Document {
 	}
 }
 
+func WeightedTerms(doc Document) map[string]float64 {
+	return weightedTerms(normalizeDocument(doc))
+}
+
 func weightedTerms(doc Document) map[string]float64 {
 	weights := map[string]float64{}
 	addTerms(weights, doc.ID, 0.25)
@@ -330,6 +334,10 @@ func addTerms(weights map[string]float64, text string, multiplier float64) {
 	for _, term := range analyzedTerms(text) {
 		weights[term] += multiplier
 	}
+}
+
+func AnalyzedTerms(text string) []string {
+	return analyzedTerms(text)
 }
 
 func analyzedTerms(text string) []string {

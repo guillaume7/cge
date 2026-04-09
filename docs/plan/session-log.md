@@ -327,3 +327,10 @@
 ### 2026-03-28T15:00:00Z
 - documentation-update: final investment assessment recorded
 - Context: Added the final experiment conclusion document under `docs/experiments/`, linked it from the main README and experiment index, and recorded that the current CGE implementation is not a strong enough foundation for further broad product investment despite useful local wins and informative consulting feedback.
+### 2026-04-09T08:37:57Z
+- status-change: TH8 → in-progress
+- status-change: TH8.E1 → done
+- status-change: TH8.E1.US1 → done
+- status-change: TH8.E1.US2 → done
+- status-change: TH8.E1.US3 → done
+- Context: Added `internal/app/contextevaluator` with local heuristic scoring for context bundles and task outputs, configurable dimension weights, bundle aggregation, contradiction/staleness metadata, and shared term analysis exported from `internal/infra/textindex`.
