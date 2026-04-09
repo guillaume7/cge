@@ -31,6 +31,11 @@ type Thresholds struct {
 	Minimal float64 `json:"minimal"`
 	// Write is the minimum composite confidence for a "write" outcome.
 	Write float64 `json:"write"`
+	// Defer is the minimum composite confidence for a deferred write. Writes
+	// scoring at or above Defer but below Write are held back and may be
+	// retried; writes below Defer are skipped without auto-retry (ADR-022 §2).
+	// Must be strictly less than Write.
+	Defer float64 `json:"defer"`
 	// RegressionDelta is the confidence drop that triggers a "backtrack" outcome.
 	// A positive value; e.g. 0.10 means a drop of 0.10 or more triggers backtrack.
 	RegressionDelta float64 `json:"regression_delta"`
@@ -42,6 +47,7 @@ func DefaultThresholds() Thresholds {
 		Injection:       0.70,
 		Minimal:         0.40,
 		Write:           0.80,
+		Defer:           0.55,
 		RegressionDelta: 0.10,
 	}
 }
@@ -62,6 +68,12 @@ func (t Thresholds) Validate() error {
 	}
 	if t.Write <= 0 || t.Write > 1 {
 		return fmt.Errorf("decision engine: threshold misconfiguration: write (%.4f) must be in (0, 1]", t.Write)
+	}
+	if t.Defer < 0 || t.Defer >= t.Write {
+		return fmt.Errorf(
+			"decision engine: threshold misconfiguration: defer (%.4f) must be in [0, write=%.4f)",
+			t.Defer, t.Write,
+		)
 	}
 	if t.RegressionDelta <= 0 {
 		return fmt.Errorf("decision engine: threshold misconfiguration: regression_delta (%.4f) must be positive", t.RegressionDelta)
@@ -89,6 +101,11 @@ func NewWithDefaults() Engine {
 	return Engine{thresholds: DefaultThresholds()}
 }
 
+// Thresholds returns the thresholds configured for this engine instance.
+func (e Engine) Thresholds() Thresholds {
+	return e.thresholds
+}
+
 // DecisionEnvelope is the machine-readable output of a decision pass (ADR-019 §3).
 // It always contains the selected outcome and the evaluator scores that motivated it.
 // The Bundle is populated only for "continue" and "minimal" outcomes.
@@ -105,6 +122,11 @@ type DecisionEnvelope struct {
 	// Bundle contains the scored candidates delivered to the consumer.
 	// Populated only for "continue" (full bundle) and "minimal" (top candidate).
 	Bundle []contextevaluator.CandidateScore `json:"bundle,omitempty"`
+	// WriteStatus classifies write-gate decisions as "approved", "deferred",
+	// or "skipped". Populated only when DecideWrite is called.
+	WriteStatus string `json:"write_status,omitempty"`
+	// WriteStatusReason explains why a write was deferred or skipped.
+	WriteStatusReason string `json:"write_status_reason,omitempty"`
 }
 
 // ContextDecisionRequest is the input for bundle-level decisions.
@@ -187,9 +209,15 @@ type WriteDecisionRequest struct {
 	Thresholds *Thresholds
 }
 
-// DecideWrite selects either "write" or "abstain" for a candidate output.
-// It returns "write" when the output's composite confidence meets or exceeds
-// the Write threshold, and "abstain" otherwise.
+// DecideWrite selects a write-gate outcome for a candidate output.
+//
+// Outcome selection:
+//   - "write"   — composite confidence >= Write threshold: write is approved
+//   - "abstain" — composite confidence >= Defer threshold: write is deferred (may retry)
+//   - "abstain" — composite confidence <  Defer threshold: write is skipped (no auto-retry)
+//
+// The WriteStatus field on the returned envelope distinguishes "approved",
+// "deferred", and "skipped" for attribution and telemetry (ADR-022 §2).
 func (e Engine) DecideWrite(req WriteDecisionRequest) (DecisionEnvelope, error) {
 	thresholds := e.thresholds
 	if req.Thresholds != nil {
@@ -208,17 +236,30 @@ func (e Engine) DecideWrite(req WriteDecisionRequest) (DecisionEnvelope, error) 
 
 	if req.Output.Composite >= thresholds.Write {
 		return DecisionEnvelope{
-			Outcome:    OutcomeWrite,
-			Confidence: req.Output.Composite,
-			Scores:     scores,
-			Bundle:     scores,
+			Outcome:     OutcomeWrite,
+			Confidence:  req.Output.Composite,
+			Scores:      scores,
+			Bundle:      scores,
+			WriteStatus: "approved",
+		}, nil
+	}
+
+	if req.Output.Composite >= thresholds.Defer {
+		return DecisionEnvelope{
+			Outcome:           OutcomeAbstain,
+			Confidence:        req.Output.Composite,
+			Scores:            scores,
+			WriteStatus:       "deferred",
+			WriteStatusReason: fmt.Sprintf("composite confidence %.4f is below write threshold %.4f but above defer threshold %.4f; write held for retry", req.Output.Composite, thresholds.Write, thresholds.Defer),
 		}, nil
 	}
 
 	return DecisionEnvelope{
-		Outcome:    OutcomeAbstain,
-		Confidence: req.Output.Composite,
-		Scores:     scores,
+		Outcome:           OutcomeAbstain,
+		Confidence:        req.Output.Composite,
+		Scores:            scores,
+		WriteStatus:       "skipped",
+		WriteStatusReason: fmt.Sprintf("composite confidence %.4f is below defer threshold %.4f; write suppressed without auto-retry", req.Output.Composite, thresholds.Defer),
 	}, nil
 }
 

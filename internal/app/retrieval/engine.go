@@ -17,9 +17,25 @@ type GraphReader interface {
 	ReadGraph(ctx context.Context, workspace repo.Workspace) (kuzu.Graph, error)
 }
 
+// ConfidenceEvaluator scores retrieval results for entity confidence.
+// Implemented by contextevaluator.Evaluator; defined here as an interface to
+// avoid an import cycle (contextevaluator already imports retrieval).
+type ConfidenceEvaluator interface {
+	EvaluateConfidence(task string, results []Result) []ConfidenceScore
+}
+
+// ConfidenceScore holds an evaluator's verdict for a single entity.
+type ConfidenceScore struct {
+	EntityID  string
+	Composite float64
+	Fate      string
+	Stale     bool
+}
+
 type Engine struct {
 	graphReader GraphReader
 	index       *textindex.Manager
+	evaluator   ConfidenceEvaluator
 }
 
 var (
@@ -45,6 +61,16 @@ type Result struct {
 type ScoreBreakdown struct {
 	Text       float64 `json:"text"`
 	Structural float64 `json:"structural"`
+	// EvaluatorComposite is the evaluator's composite confidence score for this
+	// entity. Present only when evaluator-based down-ranking is active.
+	EvaluatorComposite float64 `json:"evaluator_composite,omitempty"`
+	// EvaluatorFate is the evaluator's verdict ("survived", "trimmed", "rejected").
+	// Empty when evaluator-based down-ranking is inactive.
+	EvaluatorFate string `json:"evaluator_fate,omitempty"`
+	// DownRanked is true when evaluator scoring deprioritized this entity.
+	DownRanked bool `json:"down_ranked,omitempty"`
+	// DownRankNote explains the reason for down-ranking.
+	DownRankNote string `json:"down_rank_note,omitempty"`
 }
 
 type Entity struct {
@@ -84,6 +110,14 @@ func NewEngine(graphReader GraphReader, index *textindex.Manager) *Engine {
 		index = textindex.NewManager()
 	}
 	return &Engine{graphReader: graphReader, index: index}
+}
+
+// WithEvaluator attaches a ConfidenceEvaluator to the Engine. When set, Query
+// applies evaluator-based confidence penalties to down-rank stale or low-quality
+// entities in the results.
+func (e *Engine) WithEvaluator(ev ConfidenceEvaluator) *Engine {
+	e.evaluator = ev
+	return e
 }
 
 func (e *Engine) Query(ctx context.Context, workspace repo.Workspace, task string) (ResultSet, error) {
@@ -131,6 +165,11 @@ func (e *Engine) Query(ctx context.Context, workspace repo.Workspace, task strin
 
 	textResults := e.index.Search(index, task)
 	results := mergeResults(task, graph, textResults)
+
+	if e.evaluator != nil {
+		results = e.applyEvaluatorDownRanking(ctx, workspace, task, results)
+	}
+
 	for i := range results {
 		results[i].Rank = i + 1
 	}
@@ -391,6 +430,74 @@ func cloneStrings(values []string) []string {
 	cloned := make([]string, len(values))
 	copy(cloned, values)
 	return cloned
+}
+
+// applyEvaluatorDownRanking evaluates each result's entity for confidence and
+// applies a bounded score penalty to stale or low-quality entities, then
+// re-sorts the slice by the adjusted score. The original text+structural scores
+// are preserved in ScoreBreakdown; only the top-level Score is adjusted.
+//
+// Penalty factors by evaluator fate:
+//   - "survived": 1.0 (no change)
+//   - "trimmed": 0.7
+//   - "rejected": 0.4
+func (e *Engine) applyEvaluatorDownRanking(_ context.Context, _ repo.Workspace, task string, results []Result) []Result {
+	if len(results) == 0 || e.evaluator == nil {
+		return results
+	}
+
+	scores := e.evaluator.EvaluateConfidence(task, results)
+
+	scoreByID := make(map[string]ConfidenceScore, len(scores))
+	for _, cs := range scores {
+		scoreByID[cs.EntityID] = cs
+	}
+
+	for i := range results {
+		cs, ok := scoreByID[results[i].Entity.ID]
+		if !ok {
+			continue
+		}
+
+		factor := penaltyFactor(cs.Fate)
+		results[i].Scores.EvaluatorComposite = cs.Composite
+		results[i].Scores.EvaluatorFate = cs.Fate
+
+		if factor < 1.0 {
+			results[i].Score = results[i].Score * factor
+			results[i].Scores.DownRanked = true
+			results[i].Scores.DownRankNote = downRankNote(cs)
+		}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].Score == results[j].Score {
+			return results[i].Entity.ID < results[j].Entity.ID
+		}
+		return results[i].Score > results[j].Score
+	})
+
+	return results
+}
+
+// penaltyFactor returns the score multiplier for a given evaluator fate.
+func penaltyFactor(fate string) float64 {
+	switch fate {
+	case "trimmed":
+		return 0.7
+	case "rejected":
+		return 0.4
+	default:
+		return 1.0
+	}
+}
+
+// downRankNote returns a human-readable explanation for a down-ranked entity.
+func downRankNote(cs ConfidenceScore) string {
+	if cs.Stale {
+		return fmt.Sprintf("stale entity (composite=%.2f, fate=%s)", cs.Composite, cs.Fate)
+	}
+	return fmt.Sprintf("low confidence (composite=%.2f, fate=%s)", cs.Composite, cs.Fate)
 }
 
 func cloneMap(values map[string]any) map[string]any {

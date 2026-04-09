@@ -641,3 +641,149 @@ func TestDecisionEnvelope_Write_IsValidJSON(t *testing.T) {
 		t.Fatalf("roundtrip outcome = %q, want write", roundtrip.Outcome)
 	}
 }
+
+// TH8.E4: Write-gate three-tier WriteStatus tests
+
+func TestDecideWrite_WriteStatus_Approved_WhenCompositeAboveWriteThreshold(t *testing.T) {
+t.Parallel()
+
+eng := NewWithDefaults() // write=0.80, defer=0.60
+output := contextevaluator.OutputEvaluation{
+CandidateID: "out:high-confidence",
+Composite:   0.85,
+}
+envelope, err := eng.DecideWrite(WriteDecisionRequest{Output: output})
+
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if envelope.WriteStatus != "approved" {
+t.Fatalf("WriteStatus = %q, want approved", envelope.WriteStatus)
+}
+if envelope.Outcome != OutcomeWrite {
+t.Fatalf("Outcome = %q, want write", envelope.Outcome)
+}
+}
+
+func TestDecideWrite_WriteStatus_Deferred_WhenCompositeBetweenDeferAndWriteThresholds(t *testing.T) {
+t.Parallel()
+
+eng := NewWithDefaults() // write=0.80, defer=0.60
+output := contextevaluator.OutputEvaluation{
+CandidateID: "out:moderate-confidence",
+Composite:   0.70, // >= defer(0.60) but < write(0.80)
+}
+envelope, err := eng.DecideWrite(WriteDecisionRequest{Output: output})
+
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if envelope.WriteStatus != "deferred" {
+t.Fatalf("WriteStatus = %q, want deferred", envelope.WriteStatus)
+}
+if envelope.Outcome != OutcomeAbstain {
+t.Fatalf("Outcome = %q, want abstain", envelope.Outcome)
+}
+if envelope.WriteStatusReason == "" {
+t.Fatal("WriteStatusReason should be non-empty for deferred")
+}
+}
+
+func TestDecideWrite_WriteStatus_Skipped_WhenCompositeBelowDeferThreshold(t *testing.T) {
+t.Parallel()
+
+eng := NewWithDefaults() // write=0.80, defer=0.60
+output := contextevaluator.OutputEvaluation{
+CandidateID: "out:low-confidence",
+Composite:   0.30, // < defer(0.60)
+}
+envelope, err := eng.DecideWrite(WriteDecisionRequest{Output: output})
+
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if envelope.WriteStatus != "skipped" {
+t.Fatalf("WriteStatus = %q, want skipped", envelope.WriteStatus)
+}
+if envelope.Outcome != OutcomeAbstain {
+t.Fatalf("Outcome = %q, want abstain", envelope.Outcome)
+}
+if envelope.WriteStatusReason == "" {
+t.Fatal("WriteStatusReason should be non-empty for skipped")
+}
+}
+
+func TestDecideWrite_WriteStatus_AtExactDeferBoundary_IsDeferred(t *testing.T) {
+t.Parallel()
+
+eng := NewWithDefaults() // defer=0.60
+output := contextevaluator.OutputEvaluation{
+CandidateID: "out:boundary",
+Composite:   0.60,
+}
+envelope, err := eng.DecideWrite(WriteDecisionRequest{Output: output})
+
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if envelope.WriteStatus != "deferred" {
+t.Fatalf("WriteStatus = %q, want deferred at defer threshold boundary", envelope.WriteStatus)
+}
+}
+
+func TestDecideWrite_WriteStatus_AtExactWriteBoundary_IsApproved(t *testing.T) {
+t.Parallel()
+
+eng := NewWithDefaults() // write=0.80
+output := contextevaluator.OutputEvaluation{
+CandidateID: "out:write-boundary",
+Composite:   0.80,
+}
+envelope, err := eng.DecideWrite(WriteDecisionRequest{Output: output})
+
+if err != nil {
+t.Fatalf("unexpected error: %v", err)
+}
+if envelope.WriteStatus != "approved" {
+t.Fatalf("WriteStatus = %q, want approved at write threshold boundary", envelope.WriteStatus)
+}
+}
+
+func TestEngine_ThresholdsGetter_ReturnsConfiguredValues(t *testing.T) {
+t.Parallel()
+
+want := Thresholds{
+Injection:      0.90,
+Minimal:        0.50,
+Write:          0.85,
+Defer:          0.65,
+RegressionDelta: 0.10,
+}
+eng, err := New(want)
+if err != nil {
+t.Fatalf("New returned error: %v", err)
+}
+
+got := eng.Thresholds()
+if got.Write != want.Write {
+t.Errorf("Write = %.4f, want %.4f", got.Write, want.Write)
+}
+if got.Defer != want.Defer {
+t.Errorf("Defer = %.4f, want %.4f", got.Defer, want.Defer)
+}
+}
+
+func TestNew_RejectsMisconfiguredThresholds_DeferGEQWrite(t *testing.T) {
+t.Parallel()
+
+_, err := New(Thresholds{
+Injection:      0.70,
+Minimal:        0.40,
+Write:          0.80,
+Defer:          0.80, // equal to Write — invalid
+RegressionDelta: 0.10,
+})
+if err == nil {
+t.Fatal("expected error for Defer >= Write, got nil")
+}
+}

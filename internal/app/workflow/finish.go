@@ -13,7 +13,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/guillaume-galp/cge/internal/app/attribution"
 	"github.com/guillaume-galp/cge/internal/app/cmdsupport"
+	"github.com/guillaume-galp/cge/internal/app/contextevaluator"
+	"github.com/guillaume-galp/cge/internal/app/decisionengine"
 	graphpayload "github.com/guillaume-galp/cge/internal/domain/payload"
 	"github.com/guillaume-galp/cge/internal/infra/kuzu"
 	"github.com/guillaume-galp/cge/internal/infra/repo"
@@ -67,6 +70,26 @@ type FinishResult struct {
 	HandoffBrief       *FinishHandoffBrief       `json:"handoff_brief,omitempty"`
 	NoOp               *FinishNoOpResult         `json:"no_op,omitempty"`
 	ExecutionTelemetry *ExecutionTelemetry       `json:"execution_telemetry,omitempty"`
+	// WriteGate is populated when the evaluator loop gates a workflow finish
+	// write. Nil when write gating is disabled or no mutations were present.
+	WriteGate *FinishWriteGate `json:"write_gate,omitempty"`
+}
+
+// FinishWriteGate captures the evaluator loop decision for a workflow finish
+// memory write (ADR-022 §2). It is included in FinishResult for transparency.
+type FinishWriteGate struct {
+	// Status is "approved", "deferred", or "skipped".
+	Status string `json:"status"`
+	// Confidence is the composite confidence score used to make the decision.
+	Confidence float64 `json:"confidence"`
+	// WriteThreshold is the threshold that was applied.
+	WriteThreshold float64 `json:"write_threshold"`
+	// DeferThreshold is the defer threshold that was applied.
+	DeferThreshold float64 `json:"defer_threshold"`
+	// Reason explains why the write was deferred or skipped (empty when approved).
+	Reason string `json:"reason,omitempty"`
+	// AttributionID is the ID of the persisted attribution record.
+	AttributionID string `json:"attribution_id,omitempty"`
 }
 
 type FinishWriteSummary struct {
@@ -178,6 +201,23 @@ func (s *Service) Finish(ctx context.Context, startDir, input string) (FinishRes
 		}, nil
 	}
 
+	// Evaluate the write candidate against current graph state before committing.
+	writeGate, gateDecision := s.evaluateWriteGate(ctx, workspace, outcome)
+	if writeGate != nil && writeGate.Status != "approved" {
+		// Write was gated out — persist attribution best-effort, return without writing.
+		attrID := s.recordWriteAttribution(workspace, outcome, writeGate, gateDecision)
+		writeGate.AttributionID = attrID
+		return FinishResult{
+			BeforeRevision:     beforeRevision,
+			AfterRevision:      beforeRevision,
+			ExecutionTelemetry: executionTelemetry,
+			WriteSummary: FinishWriteSummary{
+				Status: FinishWriteStatusNoOp,
+			},
+			WriteGate: writeGate,
+		}, nil
+	}
+
 	envelope, err := s.buildFinishEnvelope(workspace, outcome)
 	if err != nil {
 		return FinishResult{}, err
@@ -204,9 +244,126 @@ func (s *Service) Finish(ctx context.Context, startDir, input string) (FinishRes
 			Revision: summary.Revision,
 		},
 	}
+	// Persist attribution for approved writes best-effort; record the ID.
+	if writeGate != nil {
+		attrID := s.recordWriteAttribution(workspace, outcome, writeGate, gateDecision)
+		writeGate.AttributionID = attrID
+		result.WriteGate = writeGate
+	}
 	brief := buildFinishHandoffBrief(outcome, result)
 	result.HandoffBrief = &brief
 	return result, nil
+}
+
+// evaluateWriteGate runs the Context Evaluator and Decision Engine on the
+// finish payload to determine whether the write should be approved, deferred,
+// or skipped (ADR-022 §1-2). It returns (nil, nil) when the evaluator is not
+// configured, preserving backward compatibility.
+func (s *Service) evaluateWriteGate(ctx context.Context, workspace repo.Workspace, outcome FinishInput) (*FinishWriteGate, *decisionengine.DecisionEnvelope) {
+	if s.evaluator == nil || s.decisionEngine == nil {
+		return nil, nil
+	}
+
+	// Build task context from the finish payload.
+	task := outcome.Task
+	if task == "" {
+		task = outcome.Summary
+	}
+
+	// Load current graph entities for consistency scoring.
+	var graphState []contextevaluator.GraphState
+	if graph, err := s.reader.ReadGraph(ctx, workspace); err == nil {
+		graphState = graphEntitiesToEvaluatorState(graph)
+	}
+
+	// Represent the finish payload as an output candidate.
+	candidate := contextevaluator.OutputCandidate{
+		ID:      finishRootID(workspace, outcome),
+		Summary: outcome.Summary,
+		Content: finishReasoningContent(outcome),
+	}
+
+	evalResult := s.evaluator.EvaluateOutput(contextevaluator.EvaluateOutputRequest{
+		Task:       task,
+		Candidate:  candidate,
+		GraphState: graphState,
+	})
+
+	envelope, err := s.decisionEngine.DecideWrite(decisionengine.WriteDecisionRequest{
+		Output: evalResult,
+	})
+	if err != nil {
+		// If the engine fails, fail open and proceed with write.
+		return nil, nil
+	}
+
+	thresholds := s.decisionEngine.Thresholds()
+	gate := &FinishWriteGate{
+		Status:         envelope.WriteStatus,
+		Confidence:     evalResult.Composite,
+		WriteThreshold: thresholds.Write,
+		DeferThreshold: thresholds.Defer,
+		Reason:         envelope.WriteStatusReason,
+	}
+	return gate, &envelope
+}
+
+// recordWriteAttribution persists an attribution record for a write-gate
+// decision best-effort. It returns the attribution record ID (or "" on error).
+func (s *Service) recordWriteAttribution(workspace repo.Workspace, outcome FinishInput, gate *FinishWriteGate, envelope *decisionengine.DecisionEnvelope) string {
+	if s.attribution == nil || gate == nil || envelope == nil {
+		return ""
+	}
+
+	memDecision := attribution.MemoryDecision(gate.Status)
+	var fates []attribution.CandidateFate
+	for _, score := range envelope.Scores {
+		fates = append(fates, attribution.CandidateFate{
+			CandidateID: score.CandidateID,
+			Fate:        score.Fate,
+			Scores:      score.Scores,
+			Composite:   score.Composite,
+			Reason:      score.RejectionReason,
+		})
+	}
+
+	wt := gate.WriteThreshold
+	dt := gate.DeferThreshold
+	rec := attribution.Record{
+		Outcome:              string(envelope.Outcome),
+		Task:                 outcome.Task,
+		SessionID:            outcome.Metadata.SessionID,
+		AggregateConfidence:  gate.Confidence,
+		WriteThreshold:       &wt,
+		DeferThreshold:       &dt,
+		MemoryDecision:       &memDecision,
+		MemoryDecisionReason: gate.Reason,
+		CandidateFates:       fates,
+	}
+	recorded, err := s.attribution.Record(workspace, rec)
+	if err != nil {
+		return ""
+	}
+	return recorded.ID
+}
+
+// graphEntitiesToEvaluatorState converts kuzu graph entities into the
+// evaluator's GraphState slice for consistency scoring.
+func graphEntitiesToEvaluatorState(graph kuzu.Graph) []contextevaluator.GraphState {
+	state := make([]contextevaluator.GraphState, 0, len(graph.Nodes))
+	for _, entity := range graph.Nodes {
+		gs := contextevaluator.GraphState{
+			EntityID: entity.ID,
+			Kind:     entity.Kind,
+			Title:    entity.Title,
+			Summary:  entity.Summary,
+			Content:  entity.Content,
+			RepoPath: entity.RepoPath,
+			Tags:     entity.Tags,
+		}
+		state = append(state, gs)
+	}
+	return state
 }
 
 func ExtractExecutionTelemetryFromFinishPayload(input string) (*ExecutionTelemetry, error) {

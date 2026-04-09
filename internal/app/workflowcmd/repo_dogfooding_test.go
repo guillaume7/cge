@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/guillaume-galp/cge/internal/app/decisionengine"
 	"github.com/guillaume-galp/cge/internal/app/workflow"
 	"github.com/guillaume-galp/cge/internal/infra/repo"
 )
@@ -141,7 +142,15 @@ func TestRepoDelegatedWorkflowCommandFlowCompletesKickoffAndHandoff(t *testing.T
 	writeWorkflowFixture(t, filepath.Join(repoDir, ".github", "copilot-instructions.md"), "# Copilot instructions\n")
 
 	manager := repo.NewManager(repo.NewGitRepositoryLocator())
-	cmd := newCommand(repoDir, workflow.NewService(manager))
+	svc := workflow.NewService(manager)
+	// Inject a very low write threshold so the evaluator approves the finish write;
+	// this test exercises the end-to-end kickoff/handoff flow, not write-gate behaviour.
+	dogfoodEng, engErr := decisionengine.New(decisionengine.Thresholds{Injection: 0.70, Minimal: 0.40, Write: 0.01, Defer: 0.005, RegressionDelta: 0.10})
+	if engErr != nil {
+		t.Fatalf("creating test engine: %v", engErr)
+	}
+	svc.DecisionEngineForTest(&dogfoodEng)
+	cmd := newCommand(repoDir, svc)
 	stdout := &bytes.Buffer{}
 	cmd.SetOut(stdout)
 	cmd.SetErr(&bytes.Buffer{})

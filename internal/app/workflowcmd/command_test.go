@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/guillaume-galp/cge/internal/app/cmdsupport"
+	"github.com/guillaume-galp/cge/internal/app/decisionengine"
 	"github.com/guillaume-galp/cge/internal/app/workflow"
 	graphpayload "github.com/guillaume-galp/cge/internal/domain/payload"
 	"github.com/guillaume-galp/cge/internal/infra/benchmarks"
@@ -1095,7 +1096,15 @@ func TestWorkflowFinishCommandPersistsDelegatedOutcomeFromFileAndReturnsHandoffE
   ]
 }`)
 
-	cmd := newCommand(repoDir, workflow.NewService(manager))
+	svc := workflow.NewService(manager)
+	// Inject a very low write threshold so the default evaluator approves the write;
+	// this test exercises Finish command plumbing, not write-gate behaviour.
+	testEng, engErr := decisionengine.New(decisionengine.Thresholds{Injection: 0.70, Minimal: 0.40, Write: 0.01, Defer: 0.005, RegressionDelta: 0.10})
+	if engErr != nil {
+		t.Fatalf("creating test engine: %v", engErr)
+	}
+	svc.DecisionEngineForTest(&testEng)
+	cmd := newCommand(repoDir, svc)
 	stdout := &bytes.Buffer{}
 	cmd.SetOut(stdout)
 	cmd.SetErr(&bytes.Buffer{})

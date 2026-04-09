@@ -178,6 +178,30 @@ func CandidateFromRetrievalResult(result retrieval.Result) Candidate {
 	}
 }
 
+// EvaluateConfidence implements retrieval.ConfidenceEvaluator. It converts
+// retrieval results to evaluator candidates, runs Evaluate, and returns a slim
+// ConfidenceScore slice that the retrieval engine can use for down-ranking
+// without importing this package.
+func (e Evaluator) EvaluateConfidence(task string, results []retrieval.Result) []retrieval.ConfidenceScore {
+	candidates := make([]Candidate, 0, len(results))
+	for _, r := range results {
+		candidates = append(candidates, CandidateFromRetrievalResult(r))
+	}
+
+	evalResult := e.Evaluate(EvaluateRequest{Task: task, Candidates: candidates})
+
+	scores := make([]retrieval.ConfidenceScore, 0, len(evalResult.Scores))
+	for _, cs := range evalResult.Scores {
+		scores = append(scores, retrieval.ConfidenceScore{
+			EntityID:  cs.CandidateID,
+			Composite: cs.Composite,
+			Fate:      cs.Fate,
+			Stale:     cs.Metadata.Stale,
+		})
+	}
+	return scores
+}
+
 func (e Evaluator) CompositeConfidence(scores DimensionScores) float64 {
 	config := ensureConfig(e.config)
 	return clamp01(
