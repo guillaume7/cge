@@ -334,3 +334,8 @@
 - status-change: TH8.E1.US2 → done
 - status-change: TH8.E1.US3 → done
 - Context: Added `internal/app/contextevaluator` with local heuristic scoring for context bundles and task outputs, configurable dimension weights, bundle aggregation, contradiction/staleness metadata, and shared term analysis exported from `internal/infra/textindex`.
+2026-04-09T15:27:52Z | Subagent completed
+2026-04-09T15:33:24Z | Subagent completed
+2026-04-09T15:35:48Z | Subagent completed
+2026-04-09T15:36:36Z | Subagent completed
+2026-04-09T15:39:40Z | Subagent completed
