@@ -4,12 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/guillaume-galp/cge/internal/app/attributionrecorder"
 	"github.com/guillaume-galp/cge/internal/app/cmdsupport"
 	"github.com/guillaume-galp/cge/internal/app/contextprojector"
+	"github.com/guillaume-galp/cge/internal/app/contextevaluator"
+	"github.com/guillaume-galp/cge/internal/app/decisionengine"
 	"github.com/guillaume-galp/cge/internal/app/graphhealth"
 	"github.com/guillaume-galp/cge/internal/app/retrieval"
 	"github.com/guillaume-galp/cge/internal/infra/kuzu"
@@ -104,12 +108,13 @@ type HealthState struct {
 }
 
 type KickoffEnvelope struct {
-	Task            KickoffTaskDetails   `json:"task"`
-	GraphState      KickoffGraphState    `json:"graph_state"`
-	Policy          KickoffPolicyState   `json:"policy"`
-	Advisory        KickoffAdvisoryState `json:"advisory"`
-	Context         KickoffContext       `json:"context"`
-	DelegationBrief DelegationBrief      `json:"delegation_brief"`
+	Task            KickoffTaskDetails       `json:"task"`
+	GraphState      KickoffGraphState        `json:"graph_state"`
+	Policy          KickoffPolicyState       `json:"policy"`
+	Advisory        KickoffAdvisoryState     `json:"advisory"`
+	Context         KickoffContext           `json:"context"`
+	DelegationBrief DelegationBrief          `json:"delegation_brief"`
+	Decision        *KickoffDecisionEnvelope `json:"decision,omitempty"`
 }
 
 type KickoffTaskDetails struct {
@@ -170,6 +175,15 @@ type DelegationBrief struct {
 	Status   string   `json:"status"`
 	Prompt   string   `json:"prompt"`
 	Guidance []string `json:"guidance,omitempty"`
+}
+
+// KickoffDecisionEnvelope is the evaluator-loop decision output included in
+// the kickoff envelope (AC2, AC3). Existing consumers that do not parse this
+// field are unaffected (AC4).
+type KickoffDecisionEnvelope struct {
+	Outcome     string                          `json:"outcome"`
+	Confidence  float64                         `json:"confidence"`
+	Attribution attributionrecorder.InlineSummary `json:"attribution"`
 }
 
 type kickoffTaskFamily struct {
@@ -295,6 +309,13 @@ func (s *Service) StartWithOptions(ctx context.Context, startDir, task string, m
 		resultSet = retrieval.ResultSet{IndexStatus: resultSet.IndexStatus, Results: []retrieval.Result{}}
 		contextEnvelope = emptyKickoffContextEnvelope(maxTokens)
 	}
+
+	// Run the evaluator loop on the effective result set (downstream of family
+	// policy and advisory mode). The result provides attribution metadata
+	// but does not re-narrow the context — the existing family policy and
+	// advisory system is the authority on context shaping (AC4, AC5).
+	kickoffDecision := runKickoffEvaluatorLoop(task, resultSet, workspace.WorkspacePath)
+
 	annotateInclusionReasons(taskFamily, resultSet, &contextEnvelope)
 
 	recommendation, readiness.Reasons = calibrateKickoffRecommendation(taskFamily, advisory, recommendation, readiness.Reasons, resultSet, contextEnvelope)
@@ -305,6 +326,14 @@ func (s *Service) StartWithOptions(ctx context.Context, startDir, task string, m
 		readiness.Status = readinessStatus(recommendation)
 		readiness.Reasons = appendReason(readiness.Reasons, "task_context_sparse")
 		kickoff = buildKickoffEnvelope(task, maxTokens, recommendation, readiness, taskFamily, policy, advisory, resultSet, contextEnvelope)
+	}
+
+	if kickoffDecision != nil {
+		kickoff.Decision = &KickoffDecisionEnvelope{
+			Outcome:     string(kickoffDecision.envelope.Outcome),
+			Confidence:  kickoffDecision.envelope.Confidence,
+			Attribution: kickoffDecision.record.InlineSummary,
+		}
 	}
 
 	return StartResult{
@@ -1307,3 +1336,59 @@ func pluralizeCount(count int, noun string) string {
 	}
 	return fmt.Sprintf("%d %ss", count, noun)
 }
+
+// kickoffEvaluatorResult bundles the decision envelope and attribution record
+// produced by the evaluator loop for a workflow start.
+type kickoffEvaluatorResult struct {
+envelope decisionengine.DecisionEnvelope
+record   attributionrecorder.Record
+}
+
+// runKickoffEvaluatorLoop runs the Context Evaluator → Decision Engine →
+// Attribution Recorder pipeline for a workflow start call. It returns nil
+// when there are no candidates to evaluate (abstain path). Persistence
+// failures are ignored — the decision is still returned.
+func runKickoffEvaluatorLoop(task string, resultSet retrieval.ResultSet, workspacePath string) *kickoffEvaluatorResult {
+if len(resultSet.Results) == 0 {
+// No candidates: emit a synthetic abstain attribution.
+engine := decisionengine.NewWithDefaults()
+evalResult := contextevaluator.EvaluationResult{
+TaskContext:         task,
+CandidateCount:      0,
+AggregateConfidence: 0,
+}
+envelope, err := engine.Decide(decisionengine.ContextDecisionRequest{EvaluationResult: evalResult})
+if err != nil {
+return nil
+}
+recorder := attributionrecorder.New()
+sessionID := os.Getenv("GRAPH_SESSION_ID")
+record := recorder.Generate(envelope, task, sessionID)
+_ = recorder.Persist(workspacePath, record)
+return &kickoffEvaluatorResult{envelope: envelope, record: record}
+}
+
+evaluator := contextevaluator.NewEvaluator(contextevaluator.Config{})
+engine := decisionengine.NewWithDefaults()
+recorder := attributionrecorder.New()
+
+candidates := make([]contextevaluator.Candidate, len(resultSet.Results))
+for i, r := range resultSet.Results {
+candidates[i] = contextevaluator.CandidateFromRetrievalResult(r)
+}
+evalResult := evaluator.Evaluate(contextevaluator.EvaluateRequest{
+Task:       task,
+Candidates: candidates,
+})
+envelope, err := engine.Decide(decisionengine.ContextDecisionRequest{
+EvaluationResult: evalResult,
+})
+if err != nil {
+return nil
+}
+sessionID := os.Getenv("GRAPH_SESSION_ID")
+record := recorder.Generate(envelope, task, sessionID)
+_ = recorder.Persist(workspacePath, record)
+return &kickoffEvaluatorResult{envelope: envelope, record: record}
+}
+

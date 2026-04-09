@@ -3,11 +3,15 @@ package contextcmd
 import (
 	"errors"
 	"io"
+	"os"
 
 	"github.com/spf13/cobra"
 
+	"github.com/guillaume-galp/cge/internal/app/attributionrecorder"
 	"github.com/guillaume-galp/cge/internal/app/cmdsupport"
 	"github.com/guillaume-galp/cge/internal/app/contextprojector"
+	"github.com/guillaume-galp/cge/internal/app/contextevaluator"
+	"github.com/guillaume-galp/cge/internal/app/decisionengine"
 	"github.com/guillaume-galp/cge/internal/app/retrieval"
 	"github.com/guillaume-galp/cge/internal/infra/repo"
 	"github.com/guillaume-galp/cge/internal/infra/textindex"
@@ -29,10 +33,10 @@ func (q graphQuerier) Query(cmd *cobra.Command, workspace repo.Workspace, task s
 }
 
 func NewCommand(startDir string, manager *repo.Manager) *cobra.Command {
-	return newCommand(startDir, manager, graphQuerier{engine: retrieval.NewEngine(nil, nil)}, contextprojector.NewProjector())
+	return newCommand(startDir, manager, graphQuerier{engine: retrieval.NewEngine(nil, nil)}, contextprojector.NewProjector(), attributionrecorder.New())
 }
 
-func newCommand(startDir string, manager *repo.Manager, querier Querier, projector contextprojector.Projector) *cobra.Command {
+func newCommand(startDir string, manager *repo.Manager, querier Querier, projector contextprojector.Projector, recorder attributionrecorder.Recorder) *cobra.Command {
 	if querier == nil {
 		querier = graphQuerier{engine: retrieval.NewEngine(nil, nil)}
 	}
@@ -62,23 +66,60 @@ func newCommand(startDir string, manager *repo.Manager, querier Querier, project
 				return handleContextError(cmd.OutOrStdout(), output, err)
 			}
 
-			results, err := querier.Query(cmd, workspace, input.Value)
+			rawResults, err := querier.Query(cmd, workspace, input.Value)
 			if err != nil {
 				return handleContextError(cmd.OutOrStdout(), output, err)
 			}
 
-			contextEnvelope, err := projector.Project(results, maxTokens)
+			// Run the evaluator loop: Context Evaluator → Decision Engine →
+			// Attribution Recorder. The decision bundle narrows the result set
+			// before projection (AC1). Persistence failures do not block the
+			// response — the decision envelope is still returned (AC3).
+			evaluator := contextevaluator.NewEvaluator(contextevaluator.Config{})
+			engine := decisionengine.NewWithDefaults()
+
+			candidates := make([]contextevaluator.Candidate, len(rawResults.Results))
+			for i, r := range rawResults.Results {
+				candidates[i] = contextevaluator.CandidateFromRetrievalResult(r)
+			}
+			evalResult := evaluator.Evaluate(contextevaluator.EvaluateRequest{
+				Task:       input.Value,
+				Candidates: candidates,
+			})
+			decisionEnvelope, decideErr := engine.Decide(decisionengine.ContextDecisionRequest{
+				EvaluationResult: evalResult,
+			})
+			if decideErr != nil {
+				return handleContextError(cmd.OutOrStdout(), output, decideErr)
+			}
+
+			// Filter the original result set to those candidates selected by
+			// the decision bundle, preserving retrieval metadata.
+			effectiveResults := filterResultSetByBundle(rawResults, decisionEnvelope)
+
+			contextEnvelope, err := projector.Project(effectiveResults, maxTokens)
 			if err != nil {
 				return handleContextError(cmd.OutOrStdout(), output, err)
 			}
+
+			// Generate and persist the attribution record. Persistence is
+			// best-effort; a failure is logged but does not fail the command.
+			sessionID := os.Getenv("GRAPH_SESSION_ID")
+			attrRecord := recorder.Generate(decisionEnvelope, input.Value, sessionID)
+			_ = recorder.Persist(workspace.WorkspacePath, attrRecord)
 
 			response := resultEnvelope{
 				Query: queryEnvelope{
 					Task:   input.Value,
 					Source: input.Source,
 				},
-				Index:   indexEnvelope{Status: results.IndexStatus},
-				Context: contextEnvelope,
+				Index:    indexEnvelope{Status: rawResults.IndexStatus},
+				Context:  contextEnvelope,
+				Decision: decisionEnvelopeOutput{
+					Outcome:       string(decisionEnvelope.Outcome),
+					Confidence:    decisionEnvelope.Confidence,
+					Attribution:   attrRecord.InlineSummary,
+				},
 			}
 
 			return cmdsupport.WriteSuccess(cmd.OutOrStdout(), output, "context", response)
@@ -93,10 +134,40 @@ func newCommand(startDir string, manager *repo.Manager, querier Querier, project
 	return cmd
 }
 
+// filterResultSetByBundle returns a ResultSet containing only the results
+// whose entity IDs appear in the decision bundle. If the bundle is empty
+// (e.g. abstain outcome), an empty ResultSet is returned. If the bundle
+// covers all candidates, the original set is returned unchanged.
+func filterResultSetByBundle(original retrieval.ResultSet, envelope decisionengine.DecisionEnvelope) retrieval.ResultSet {
+	if len(envelope.Bundle) == 0 {
+		return retrieval.ResultSet{IndexStatus: original.IndexStatus, Results: []retrieval.Result{}}
+	}
+	bundleIDs := make(map[string]struct{}, len(envelope.Bundle))
+	for _, cs := range envelope.Bundle {
+		bundleIDs[cs.CandidateID] = struct{}{}
+	}
+	filtered := make([]retrieval.Result, 0, len(envelope.Bundle))
+	for _, r := range original.Results {
+		if _, ok := bundleIDs[r.Entity.ID]; ok {
+			filtered = append(filtered, r)
+		}
+	}
+	return retrieval.ResultSet{IndexStatus: original.IndexStatus, Results: filtered}
+}
+
 type resultEnvelope struct {
-	Query   queryEnvelope             `json:"query"`
-	Index   indexEnvelope             `json:"index"`
-	Context contextprojector.Envelope `json:"context"`
+	Query    queryEnvelope             `json:"query"`
+	Index    indexEnvelope             `json:"index"`
+	Context  contextprojector.Envelope `json:"context"`
+	Decision decisionEnvelopeOutput    `json:"decision"`
+}
+
+// decisionEnvelopeOutput is the decision metadata included in the response.
+// Existing consumers that do not parse this field remain unaffected (AC4).
+type decisionEnvelopeOutput struct {
+	Outcome    string                          `json:"outcome"`
+	Confidence float64                         `json:"confidence"`
+	Attribution attributionrecorder.InlineSummary `json:"attribution"`
 }
 
 type queryEnvelope struct {
