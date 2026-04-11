@@ -4,28 +4,28 @@
     "sessionStart": [
       {
         "type": "command",
-        "bash": "/usr/local/bin/gt prime --hook && /usr/local/bin/gt mail check --inject",
+        "bash": "GT=$(command -v gt 2>/dev/null) && [ -n \"$GT\" ] && \"$GT\" prime --hook && \"$GT\" mail check --inject || true",
         "timeoutSec": 30
       }
     ],
     "userPromptSubmitted": [
       {
         "type": "command",
-        "bash": "/usr/local/bin/gt mail check --inject",
+        "bash": "GT=$(command -v gt 2>/dev/null) && [ -n \"$GT\" ] && \"$GT\" mail check --inject || true",
         "timeoutSec": 10
       }
     ],
     "preToolUse": [
       {
         "type": "command",
-        "bash": "INPUT=$(cat) && TOOL=$(echo \"$INPUT\" | jq -r '.toolName // empty') && if [ \"$TOOL\" = \"bash\" ]; then CMD=$(echo \"$INPUT\" | jq -r '.toolArgs // empty' | jq -r '.command // empty'); if echo \"$CMD\" | grep -qE 'gh\\s+pr\\s+create|git\\s+checkout\\s+-b|git\\s+switch\\s+-c'; then /usr/local/bin/gt tap guard pr-workflow 2>/dev/null || echo '{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Gas Town PR workflow guard: use gt done to submit work\"}'; fi; fi",
+        "bash": "JQ=$(command -v jq 2>/dev/null) && [ -n \"$JQ\" ] || exit 0; GT=$(command -v gt 2>/dev/null); INPUT=$(cat); TOOL=$(echo \"$INPUT\" | \"$JQ\" -r '.toolName // empty'); if [ \"$TOOL\" = \"bash\" ]; then CMD=$(echo \"$INPUT\" | \"$JQ\" -r '.toolArgs.command // empty'); if echo \"$CMD\" | grep -qE 'gh\\s+pr\\s+create|git\\s+checkout\\s+-b|git\\s+switch\\s+-c'; then if [ -n \"$GT\" ]; then \"$GT\" tap guard pr-workflow 2>/dev/null || echo '{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Gas Town PR workflow guard: use gt done to submit work\"}'; else echo '{\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"Gas Town PR workflow guard: use gt done to submit work\"}'; fi; fi; fi",
         "timeoutSec": 10
       }
     ],
     "sessionEnd": [
       {
         "type": "command",
-        "bash": "/usr/local/bin/gt costs record &",
+        "bash": "GT=$(command -v gt 2>/dev/null); [ -n \"$GT\" ] && \"$GT\" costs record &",
         "timeoutSec": 10
       }
     ]

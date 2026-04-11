@@ -22,31 +22,14 @@ internal/
     benchmarkcmd/
     labcmd/
     workflow/
-  domain/
-    entity/
+    contextevaluator/
+    decisionengine/
+    attributionrecorder/
     retrieval/
-    payload/
-    revision/
-    hygiene/
-    stats/
-    evaluator/
-    decision/
-    attribution/
     lab/
-      orchestrator/
-      ledger/
-      evaluation/
-      report/
-  infra/
-    repo/
-    kuzu/
-    index/
-    workflowassets/
-    benchmarks/
-    labstore/
 docs/
   architecture/
-  ADRs/
+    adrs/
   vision_of_product/
 testdata/
   payloads/

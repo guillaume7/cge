@@ -249,185 +249,185 @@ func contains(values []string, want string) bool {
 // TH8.E4.US2: Evaluator-based down-ranking tests
 
 type stubConfidenceEvaluator struct {
-scores map[string]ConfidenceScore
+	scores map[string]ConfidenceScore
 }
 
 func (s stubConfidenceEvaluator) EvaluateConfidence(_ string, results []Result) []ConfidenceScore {
-out := make([]ConfidenceScore, 0, len(results))
-for _, r := range results {
-if cs, ok := s.scores[r.Entity.ID]; ok {
-out = append(out, cs)
-}
-}
-return out
+	out := make([]ConfidenceScore, 0, len(results))
+	for _, r := range results {
+		if cs, ok := s.scores[r.Entity.ID]; ok {
+			out = append(out, cs)
+		}
+	}
+	return out
 }
 
 func TestEngineDownRanksLowConfidenceEntities(t *testing.T) {
-t.Parallel()
+	t.Parallel()
 
-_, workspace := initRetrievalWorkspace(t)
-writeRetrievalFixture(t, workspace)
+	_, workspace := initRetrievalWorkspace(t)
+	writeRetrievalFixture(t, workspace)
 
-evaluator := stubConfidenceEvaluator{
-scores: map[string]ConfidenceScore{
-"component:authentication": {
-EntityID:  "component:authentication",
-Composite: 0.30,
-Fate:      "rejected",
-Stale:     false,
-},
-},
-}
+	evaluator := stubConfidenceEvaluator{
+		scores: map[string]ConfidenceScore{
+			"component:authentication": {
+				EntityID:  "component:authentication",
+				Composite: 0.30,
+				Fate:      "rejected",
+				Stale:     false,
+			},
+		},
+	}
 
-engine := NewEngine(nil, nil).WithEvaluator(evaluator)
-result, err := engine.Query(context.Background(), workspace, "what depends on auth?")
-if err != nil {
-t.Fatalf("Query returned error: %v", err)
-}
+	engine := NewEngine(nil, nil).WithEvaluator(evaluator)
+	result, err := engine.Query(context.Background(), workspace, "what depends on auth?")
+	if err != nil {
+		t.Fatalf("Query returned error: %v", err)
+	}
 
-authResult := requireResult(t, result.Results, "component:authentication")
-if !authResult.Scores.DownRanked {
-t.Error("component:authentication should be marked DownRanked=true")
-}
-if authResult.Scores.EvaluatorFate != "rejected" {
-t.Errorf("EvaluatorFate = %q, want rejected", authResult.Scores.EvaluatorFate)
-}
-if authResult.Scores.EvaluatorComposite != 0.30 {
-t.Errorf("EvaluatorComposite = %.2f, want 0.30", authResult.Scores.EvaluatorComposite)
-}
-if authResult.Scores.DownRankNote == "" {
-t.Error("DownRankNote should be non-empty for down-ranked entity")
-}
+	authResult := requireResult(t, result.Results, "component:authentication")
+	if !authResult.Scores.DownRanked {
+		t.Error("component:authentication should be marked DownRanked=true")
+	}
+	if authResult.Scores.EvaluatorFate != "rejected" {
+		t.Errorf("EvaluatorFate = %q, want rejected", authResult.Scores.EvaluatorFate)
+	}
+	if authResult.Scores.EvaluatorComposite != 0.30 {
+		t.Errorf("EvaluatorComposite = %.2f, want 0.30", authResult.Scores.EvaluatorComposite)
+	}
+	if authResult.Scores.DownRankNote == "" {
+		t.Error("DownRankNote should be non-empty for down-ranked entity")
+	}
 }
 
 func TestEngineDownRankedEntityRanksLowerThanHighConfidenceEntity(t *testing.T) {
-t.Parallel()
+	t.Parallel()
 
-_, workspace := initRetrievalWorkspace(t)
-writeRetrievalFixture(t, workspace)
+	_, workspace := initRetrievalWorkspace(t)
+	writeRetrievalFixture(t, workspace)
 
-// Mark login-api as rejected so it ranks below authentication
-evaluator := stubConfidenceEvaluator{
-scores: map[string]ConfidenceScore{
-"service:login-api": {
-EntityID:  "service:login-api",
-Composite: 0.20,
-Fate:      "rejected",
-},
-},
-}
+	// Mark login-api as rejected so it ranks below authentication
+	evaluator := stubConfidenceEvaluator{
+		scores: map[string]ConfidenceScore{
+			"service:login-api": {
+				EntityID:  "service:login-api",
+				Composite: 0.20,
+				Fate:      "rejected",
+			},
+		},
+	}
 
-engine := NewEngine(nil, nil).WithEvaluator(evaluator)
-result, err := engine.Query(context.Background(), workspace, "what depends on auth?")
-if err != nil {
-t.Fatalf("Query returned error: %v", err)
-}
+	engine := NewEngine(nil, nil).WithEvaluator(evaluator)
+	result, err := engine.Query(context.Background(), workspace, "what depends on auth?")
+	if err != nil {
+		t.Fatalf("Query returned error: %v", err)
+	}
 
-loginRank := -1
-authRank := -1
-for _, r := range result.Results {
-switch r.Entity.ID {
-case "service:login-api":
-loginRank = r.Rank
-case "component:authentication":
-authRank = r.Rank
-}
-}
+	loginRank := -1
+	authRank := -1
+	for _, r := range result.Results {
+		switch r.Entity.ID {
+		case "service:login-api":
+			loginRank = r.Rank
+		case "component:authentication":
+			authRank = r.Rank
+		}
+	}
 
-if loginRank == -1 || authRank == -1 {
-t.Fatalf("expected both entities in results, got loginRank=%d authRank=%d", loginRank, authRank)
-}
-if loginRank <= authRank {
-t.Errorf("login-api rank=%d should be worse (higher number) than auth rank=%d after down-ranking", loginRank, authRank)
-}
+	if loginRank == -1 || authRank == -1 {
+		t.Fatalf("expected both entities in results, got loginRank=%d authRank=%d", loginRank, authRank)
+	}
+	if loginRank <= authRank {
+		t.Errorf("login-api rank=%d should be worse (higher number) than auth rank=%d after down-ranking", loginRank, authRank)
+	}
 }
 
 func TestEngineDownRankedEntityRemainsInResults(t *testing.T) {
-t.Parallel()
+	t.Parallel()
 
-_, workspace := initRetrievalWorkspace(t)
-writeRetrievalFixture(t, workspace)
+	_, workspace := initRetrievalWorkspace(t)
+	writeRetrievalFixture(t, workspace)
 
-evaluator := stubConfidenceEvaluator{
-scores: map[string]ConfidenceScore{
-"service:billing": {
-EntityID:  "service:billing",
-Composite: 0.15,
-Fate:      "rejected",
-},
-},
-}
+	evaluator := stubConfidenceEvaluator{
+		scores: map[string]ConfidenceScore{
+			"service:billing": {
+				EntityID:  "service:billing",
+				Composite: 0.15,
+				Fate:      "rejected",
+			},
+		},
+	}
 
-engine := NewEngine(nil, nil).WithEvaluator(evaluator)
-result, err := engine.Query(context.Background(), workspace, "billing payments")
-if err != nil {
-t.Fatalf("Query returned error: %v", err)
-}
+	engine := NewEngine(nil, nil).WithEvaluator(evaluator)
+	result, err := engine.Query(context.Background(), workspace, "billing payments")
+	if err != nil {
+		t.Fatalf("Query returned error: %v", err)
+	}
 
-var found bool
-for _, r := range result.Results {
-if r.Entity.ID == "service:billing" {
-found = true
-if !r.Scores.DownRanked {
-t.Error("billing should be DownRanked=true")
-}
-}
-}
-if !found {
-// billing may not appear if text score is 0; that's acceptable
-t.Log("service:billing not in results (no text match) — down-rank has no effect when entity absent")
-}
+	var found bool
+	for _, r := range result.Results {
+		if r.Entity.ID == "service:billing" {
+			found = true
+			if !r.Scores.DownRanked {
+				t.Error("billing should be DownRanked=true")
+			}
+		}
+	}
+	if !found {
+		// billing may not appear if text score is 0; that's acceptable
+		t.Log("service:billing not in results (no text match) — down-rank has no effect when entity absent")
+	}
 }
 
 func TestEngineHighConfidenceEntityNotDownRanked(t *testing.T) {
-t.Parallel()
+	t.Parallel()
 
-_, workspace := initRetrievalWorkspace(t)
-writeRetrievalFixture(t, workspace)
+	_, workspace := initRetrievalWorkspace(t)
+	writeRetrievalFixture(t, workspace)
 
-evaluator := stubConfidenceEvaluator{
-scores: map[string]ConfidenceScore{
-"component:authentication": {
-EntityID:  "component:authentication",
-Composite: 0.90,
-Fate:      "survived",
-},
-},
-}
+	evaluator := stubConfidenceEvaluator{
+		scores: map[string]ConfidenceScore{
+			"component:authentication": {
+				EntityID:  "component:authentication",
+				Composite: 0.90,
+				Fate:      "survived",
+			},
+		},
+	}
 
-engine := NewEngine(nil, nil).WithEvaluator(evaluator)
-result, err := engine.Query(context.Background(), workspace, "what depends on auth?")
-if err != nil {
-t.Fatalf("Query returned error: %v", err)
-}
+	engine := NewEngine(nil, nil).WithEvaluator(evaluator)
+	result, err := engine.Query(context.Background(), workspace, "what depends on auth?")
+	if err != nil {
+		t.Fatalf("Query returned error: %v", err)
+	}
 
-authResult := requireResult(t, result.Results, "component:authentication")
-if authResult.Scores.DownRanked {
-t.Error("survived entity should NOT be marked DownRanked")
-}
-if authResult.Scores.EvaluatorFate != "survived" {
-t.Errorf("EvaluatorFate = %q, want survived", authResult.Scores.EvaluatorFate)
-}
+	authResult := requireResult(t, result.Results, "component:authentication")
+	if authResult.Scores.DownRanked {
+		t.Error("survived entity should NOT be marked DownRanked")
+	}
+	if authResult.Scores.EvaluatorFate != "survived" {
+		t.Errorf("EvaluatorFate = %q, want survived", authResult.Scores.EvaluatorFate)
+	}
 }
 
 func TestEngineWithoutEvaluatorProducesNoDownRankMetadata(t *testing.T) {
-t.Parallel()
+	t.Parallel()
 
-_, workspace := initRetrievalWorkspace(t)
-writeRetrievalFixture(t, workspace)
+	_, workspace := initRetrievalWorkspace(t)
+	writeRetrievalFixture(t, workspace)
 
-engine := NewEngine(nil, nil) // no evaluator
-result, err := engine.Query(context.Background(), workspace, "what depends on auth?")
-if err != nil {
-t.Fatalf("Query returned error: %v", err)
-}
+	engine := NewEngine(nil, nil) // no evaluator
+	result, err := engine.Query(context.Background(), workspace, "what depends on auth?")
+	if err != nil {
+		t.Fatalf("Query returned error: %v", err)
+	}
 
-for _, r := range result.Results {
-if r.Scores.DownRanked {
-t.Errorf("entity %q has DownRanked=true without evaluator", r.Entity.ID)
-}
-if r.Scores.EvaluatorFate != "" {
-t.Errorf("entity %q has EvaluatorFate=%q without evaluator", r.Entity.ID, r.Scores.EvaluatorFate)
-}
-}
+	for _, r := range result.Results {
+		if r.Scores.DownRanked {
+			t.Errorf("entity %q has DownRanked=true without evaluator", r.Entity.ID)
+		}
+		if r.Scores.EvaluatorFate != "" {
+			t.Errorf("entity %q has EvaluatorFate=%q without evaluator", r.Entity.ID, r.Scores.EvaluatorFate)
+		}
+	}
 }

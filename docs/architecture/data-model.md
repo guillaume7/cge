@@ -833,17 +833,17 @@ with new condition types:
   "conditions": [
     {
       "condition_id": "with-harness",
-      "workflow_mode": "harness_backed",
+      "workflow_mode": "with_harness",
       "description": "full CGE pipeline: retrieval, evaluation, decision, attribution"
     },
     {
       "condition_id": "without-harness",
-      "workflow_mode": "baseline_no_cge",
+      "workflow_mode": "without_harness",
       "description": "no CGE involvement; standard Copilot CLI only"
     },
     {
       "condition_id": "graph-only",
-      "workflow_mode": "graph_backed",
+      "workflow_mode": "graph_only",
       "description": "graph retrieval and projection without evaluator loop; pre-VP8 behavior"
     }
   ]

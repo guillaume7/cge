@@ -11,8 +11,8 @@ import (
 
 	"github.com/guillaume-galp/cge/internal/app/attributionrecorder"
 	"github.com/guillaume-galp/cge/internal/app/cmdsupport"
-	"github.com/guillaume-galp/cge/internal/app/contextprojector"
 	"github.com/guillaume-galp/cge/internal/app/contextevaluator"
+	"github.com/guillaume-galp/cge/internal/app/contextprojector"
 	"github.com/guillaume-galp/cge/internal/app/decisionengine"
 	"github.com/guillaume-galp/cge/internal/app/graphhealth"
 	"github.com/guillaume-galp/cge/internal/app/retrieval"
@@ -181,8 +181,8 @@ type DelegationBrief struct {
 // the kickoff envelope (AC2, AC3). Existing consumers that do not parse this
 // field are unaffected (AC4).
 type KickoffDecisionEnvelope struct {
-	Outcome     string                          `json:"outcome"`
-	Confidence  float64                         `json:"confidence"`
+	Outcome     string                            `json:"outcome"`
+	Confidence  float64                           `json:"confidence"`
 	Attribution attributionrecorder.InlineSummary `json:"attribution"`
 }
 
@@ -1340,55 +1340,55 @@ func pluralizeCount(count int, noun string) string {
 // kickoffEvaluatorResult bundles the decision envelope and attribution record
 // produced by the evaluator loop for a workflow start.
 type kickoffEvaluatorResult struct {
-envelope decisionengine.DecisionEnvelope
-record   attributionrecorder.Record
+	envelope decisionengine.DecisionEnvelope
+	record   attributionrecorder.Record
 }
 
 // runKickoffEvaluatorLoop runs the Context Evaluator → Decision Engine →
-// Attribution Recorder pipeline for a workflow start call. It returns nil
-// when there are no candidates to evaluate (abstain path). Persistence
+// Attribution Recorder pipeline for a workflow start call. When there are no
+// candidates it emits a synthetic abstain decision and returns a non-nil
+// result; nil is returned only if the decision engine itself errors. Persistence
 // failures are ignored — the decision is still returned.
 func runKickoffEvaluatorLoop(task string, resultSet retrieval.ResultSet, workspacePath string) *kickoffEvaluatorResult {
-if len(resultSet.Results) == 0 {
-// No candidates: emit a synthetic abstain attribution.
-engine := decisionengine.NewWithDefaults()
-evalResult := contextevaluator.EvaluationResult{
-TaskContext:         task,
-CandidateCount:      0,
-AggregateConfidence: 0,
-}
-envelope, err := engine.Decide(decisionengine.ContextDecisionRequest{EvaluationResult: evalResult})
-if err != nil {
-return nil
-}
-recorder := attributionrecorder.New()
-sessionID := os.Getenv("GRAPH_SESSION_ID")
-record := recorder.Generate(envelope, task, sessionID)
-_ = recorder.Persist(workspacePath, record)
-return &kickoffEvaluatorResult{envelope: envelope, record: record}
-}
+	if len(resultSet.Results) == 0 {
+		// No candidates: emit a synthetic abstain attribution.
+		engine := decisionengine.NewWithDefaults()
+		evalResult := contextevaluator.EvaluationResult{
+			TaskContext:         task,
+			CandidateCount:      0,
+			AggregateConfidence: 0,
+		}
+		envelope, err := engine.Decide(decisionengine.ContextDecisionRequest{EvaluationResult: evalResult})
+		if err != nil {
+			return nil
+		}
+		recorder := attributionrecorder.New()
+		sessionID := os.Getenv("GRAPH_SESSION_ID")
+		record := recorder.Generate(envelope, task, sessionID)
+		_ = recorder.Persist(workspacePath, record)
+		return &kickoffEvaluatorResult{envelope: envelope, record: record}
+	}
 
-evaluator := contextevaluator.NewEvaluator(contextevaluator.Config{})
-engine := decisionengine.NewWithDefaults()
-recorder := attributionrecorder.New()
+	evaluator := contextevaluator.NewEvaluator(contextevaluator.Config{})
+	engine := decisionengine.NewWithDefaults()
+	recorder := attributionrecorder.New()
 
-candidates := make([]contextevaluator.Candidate, len(resultSet.Results))
-for i, r := range resultSet.Results {
-candidates[i] = contextevaluator.CandidateFromRetrievalResult(r)
+	candidates := make([]contextevaluator.Candidate, len(resultSet.Results))
+	for i, r := range resultSet.Results {
+		candidates[i] = contextevaluator.CandidateFromRetrievalResult(r)
+	}
+	evalResult := evaluator.Evaluate(contextevaluator.EvaluateRequest{
+		Task:       task,
+		Candidates: candidates,
+	})
+	envelope, err := engine.Decide(decisionengine.ContextDecisionRequest{
+		EvaluationResult: evalResult,
+	})
+	if err != nil {
+		return nil
+	}
+	sessionID := os.Getenv("GRAPH_SESSION_ID")
+	record := recorder.Generate(envelope, task, sessionID)
+	_ = recorder.Persist(workspacePath, record)
+	return &kickoffEvaluatorResult{envelope: envelope, record: record}
 }
-evalResult := evaluator.Evaluate(contextevaluator.EvaluateRequest{
-Task:       task,
-Candidates: candidates,
-})
-envelope, err := engine.Decide(decisionengine.ContextDecisionRequest{
-EvaluationResult: evalResult,
-})
-if err != nil {
-return nil
-}
-sessionID := os.Getenv("GRAPH_SESSION_ID")
-record := recorder.Generate(envelope, task, sessionID)
-_ = recorder.Persist(workspacePath, record)
-return &kickoffEvaluatorResult{envelope: envelope, record: record}
-}
-

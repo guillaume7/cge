@@ -56,8 +56,6 @@ Thumbs.db
 # Logs (session-log is tracked)
 *.log
 
-# Test artifacts
-coverage/
-.nyc_output/
-htmlcov/
-.pytest_cache/
+# Runtime artifacts (session IDs, agent locks, timestamps)
+.runtime/
+
