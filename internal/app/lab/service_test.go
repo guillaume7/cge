@@ -59,8 +59,24 @@ func TestServiceInitBootstrapsWorkspaceAndLabScaffolding(t *testing.T) {
 	}
 
 	conditions := readConditionsManifest(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, repo.LabConditionsManifestName))
-	if len(conditions.Conditions) != 2 {
-		t.Fatalf("conditions = %#v, want with-graph and without-graph defaults", conditions.Conditions)
+	if len(conditions.Conditions) != 5 {
+		t.Fatalf("conditions = %#v, want 5 default conditions (with-graph, without-graph, with-harness, without-harness, graph-only)", conditions.Conditions)
+	}
+	conditionIDs := make([]string, 0, len(conditions.Conditions))
+	for _, c := range conditions.Conditions {
+		conditionIDs = append(conditionIDs, c.ConditionID)
+	}
+	for _, wantID := range []string{"with-graph", "without-graph", "with-harness", "without-harness", "graph-only"} {
+		found := false
+		for _, id := range conditionIDs {
+			if id == wantID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("default conditions missing %q; got %v", wantID, conditionIDs)
+		}
 	}
 }
 

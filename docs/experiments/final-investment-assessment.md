@@ -169,5 +169,5 @@ Related design history:
 
 - `docs/vision_of_product/VP6-precision-governed-advisory-kickoff/README.md`
 - `docs/vision_of_product/VP7-verification-calibrated-audit-kickoff/README.md`
-- `docs/ADRs/ADR-016-precision-governed-advisory-kickoff.md`
-- `docs/ADRs/ADR-017-verification-calibrated-audit-kickoff.md`
+- `docs/architecture/adrs/ADR-016-precision-governed-advisory-kickoff.md`
+- `docs/architecture/adrs/ADR-017-verification-calibrated-audit-kickoff.md`

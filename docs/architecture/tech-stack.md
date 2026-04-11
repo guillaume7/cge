@@ -1,4 +1,4 @@
-# Tech Stack — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4
+# Tech Stack — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP8
 
 ## Overview
 
@@ -31,6 +31,9 @@ user review.
 | Run ledger | Local filesystem JSON records under `.graph/lab/` | Keep run artifacts immutable, inspectable, and traceable without an external database | ADR-013 |
 | Evaluation / scoring | Separated in-process evaluation step with blinding support | Enable condition-blind quality scoring and independent re-evaluation | ADR-014 |
 | Report generation | In-process statistical aggregation to local JSON reports | Derive scientific-style reports from run and evaluation artifacts without external analytics tooling | ADR-013 |
+| Context evaluation | In-process Go heuristic evaluator | Score candidate context for relevance, consistency, and usefulness locally without LLM calls | ADR-018 |
+| Decision engine | In-process Go threshold-driven outcome selector | Select continue/minimal/abstain/backtrack/write outcomes from evaluator scores | ADR-019 |
+| Attribution recording | Local filesystem JSON records under `.graph/attribution/` | Persist decision evidence for lab analysis and agent inspection | ADR-021 |
 | Payload format | Versioned JSON | Native machine-readable protocol for stdin/stdout/files | ADR-005 |
 | Testing | Go `testing` package | Keep setup simple and standard | ADR-001 |
 | Build / dependency management | Go modules | Reproducible builds with `go.mod` and `go.sum` | ADR-001 |
@@ -207,6 +210,52 @@ Trade-off:
 - two-phase workflow (run then evaluate) is more complex than inline scoring
 - blinding requires careful artifact presentation to strip condition metadata
 
+### In-process context evaluator (VP8)
+
+Why it fits:
+
+- VP8 requires evaluation before trust for every context retrieval path
+- heuristic-based scoring (overlap, recency, coherence) is lightweight enough
+  for in-process CLI use
+- avoids LLM calls on the critical path, preserving local-first operation
+- complements (does not replace) the existing retrieval ranking pipeline
+
+Trade-off:
+
+- heuristic scoring is weaker than semantic evaluation from an LLM
+- calibrating scoring weights requires empirical evidence from lab experiments
+- adds latency to every evaluated retrieval path
+
+### In-process decision engine (VP8)
+
+Why it fits:
+
+- VP8 requires normalized outcomes (continue/minimal/abstain/backtrack/write)
+  that go beyond the binary inject/suppress model from VP6
+- threshold-driven outcome selection is cheap local logic
+- composable with existing family-aware kickoff policies
+
+Trade-off:
+
+- threshold calibration is empirical; bad defaults can cause over-abstention
+  or under-filtering
+- five outcomes are more complex for consumers than two
+
+### Local attribution records (VP8)
+
+Why they fit:
+
+- VP8 makes attribution load-bearing for lab analysis
+- JSON records under `.graph/attribution/` follow the same local-filesystem
+  pattern as run ledger and evaluation records
+- keeps decision evidence inspectable and diffable
+
+Trade-off:
+
+- attribution volume grows with every evaluated retrieval; may need pruning
+- adds a second write to every evaluator-loop pass (inline envelope + persisted
+  record)
+
 ## Rejected Simpler/Heavier Options
 
 ### Python
@@ -280,3 +329,23 @@ Trade-off:
 - Cons: prevents blinding, couples scoring to execution, cannot re-evaluate
 - Rejected because: VP4 principles explicitly require execution/judgment
   separation to reduce confirmation bias
+
+### LLM-based context evaluation on the critical path (VP8)
+- Pros: richer semantic scoring, better relevance detection
+- Cons: adds latency, cost, and external dependency; breaks local-first
+  principle
+- Rejected because: VP8 must stay local-first; heuristic scoring should be
+  tried first. LLM-based scoring can be added in a future VP if heuristics
+  prove insufficient
+
+### Skip evaluation and use retrieval ranking as the only quality gate (VP8)
+- Pros: no new component, minimal pipeline change
+- Cons: ranking cannot detect task-level relevance drift or consistency problems
+- Rejected because: VP8 identifies the missing evaluator loop as the core
+  product failure to correct
+
+### Build CGE as a standalone agent runtime instead of a Copilot CLI augmentation (VP8)
+- Pros: full control over agent lifecycle
+- Cons: duplicates Copilot CLI capabilities, adds platform complexity
+- Rejected because: VP8 should prove value in the existing Copilot CLI workflow
+  before building a separate runtime

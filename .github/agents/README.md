@@ -1,157 +1,45 @@
-# The Autopilot Squad
+# Agent Guide
 
-The Copilot Build Method is powered by a squad of specialized agents, each with a focused role in the product development lifecycle. The squad supports two execution modes: **local autopilot** (6 core agents, via `/run-autopilot`) and **server-side Loom weaving** (5 Loom agents, via `/run-loom`).
+The active Copilot surface is intentionally small: one planning pair, one
+execution lead, and three focused execution subagents.
 
-## Squad Overview
+## Active Agents
 
-```
-                    ┌─────────────────┐
-                    │   ORCHESTRATOR   │  Phase 4A: Local Autopilot Loop
-                    │  (squad leader)  │
-                    └────────┬────────┘
-                             │ delegates to
-        ┌────────────────────┼────────────────────┐
-        │                    │                    │
-   ┌────▼──────┐       ┌─────▼─────┐       ┌─────▼──────┐
-   │ DEVELOPER  │◄─────│  REVIEWER  │       │TROUBLESHOOT│
-   │(impl+test) │      │            │       │            │  Per-story cycle
-   └────────────┘      └────────────┘       └────────────┘
+| Agent | Phase | Role | Invocation |
+| --- | --- | --- | --- |
+| `architect` | 2 | Turns approved vision into architecture docs and ADRs | `/plan-product` |
+| `product-owner` | 3 | Breaks architecture into themes, epics, stories, and backlog state | `/plan-product` |
+| `orchestrator` | 4 | Runs the local autopilot loop and manages backlog state | `/run-autopilot` |
+| `developer` | 4 | Implements and tests one story | orchestrator only |
+| `reviewer` | 4 | Reviews correctness, security, and conventions | orchestrator only |
+| `troubleshooter` | 4 | Fixes failed stories after build or test failures | orchestrator only |
 
-   ┌──────────┐     ┌───────────────┐
-   │ ARCHITECT │────►│ PRODUCT OWNER │  Phases 2-3: Design & Plan
-   └──────────┘     └───────────────┘
+## Skills
 
-   ┌────────────────────┐
-   │  LOOM-MCP-OPERATOR │  Phase 4B: Server-side PR Weaving
-   └────────┬───────────┘
-            │ handoffs to
-   ┌────────▼────┐  ┌──────────┐  ┌────────────┐
-   │ LOOM-GATE   │  │LOOM-DEBUG│  │ LOOM-MERGE │  Per-PR cycle
-   └─────────────┘  └──────────┘  └────────────┘
-```
+| Agent | Build method | BDD stories | Backlog | Code quality | Architecture |
+| --- | --- | --- | --- | --- | --- |
+| `architect` | ✓ |  |  |  | ✓ |
+| `product-owner` | ✓ | ✓ | ✓ |  |  |
+| `orchestrator` | ✓ |  | ✓ |  |  |
+| `developer` | ✓ | ✓ |  |  |  |
+| `reviewer` | ✓ |  |  | ✓ |  |
+| `troubleshooter` | ✓ | ✓ |  | ✓ |  |
 
-## Agent Details
+## Tooling
 
-### Orchestrator
-- **Phase**: 4A (Local Autopilot Execution)
-- **Role**: Squad leader. Reads the backlog, sequences work, delegates to subagents, manages the full lifecycle loop. Generates changelogs at epic boundaries and release notes at theme boundaries, and enforces theme-boundary release hygiene (`README.md`, install docs, version references, issue-template archival).
-- **Skills**: `the-copilot-build-method`, `backlog-management`
-- **Delegates to**: All other agents
-- **Invocable**: By user (via `/run-autopilot`)
+| Agent | GitHub MCP | Playwright MCP | git | gh |
+| --- | --- | --- | --- | --- |
+| `architect` | ✓ |  | ✓ |  |
+| `product-owner` |  |  | ✓ |  |
+| `orchestrator` | ✓ |  | ✓ | ✓ |
+| `developer` | ✓ | ✓ | ✓ | ✓ |
+| `reviewer` | ✓ |  | ✓ |  |
+| `troubleshooter` | ✓ |  | ✓ | ✓ |
 
-### Product Owner
-- **Phase**: 3 (Planning)
-- **Role**: Transforms product vision into themes, epics, and BDD user stories. Builds the backlog. Generates one GitHub issue template per epic (`.github/ISSUE_TEMPLATE/TH<n>-E<m>-<slug>.md`) for Loom weaving. Revalidates vision and public release-facing docs at theme completion.
-- **Skills**: `the-copilot-build-method`, `bdd-stories`, `backlog-management`
-- **Invocable**: By user or orchestrator
+## User-facing prompts
 
-### Architect
-- **Phase**: 2 (Architecture)
-- **Role**: Analyzes product vision and produces system architecture, tech stack decisions, and ADRs.
-- **Skills**: `the-copilot-build-method`, `architecture-decisions`
-- **Invocable**: By user (via `/plan-product`)
-
-### Developer
-- **Phase**: 4A (Local Autopilot Execution)
-- **Role**: Implements AND tests exactly one user story per session. Writes production code, test files, runs builds and tests.
-- **Skills**: `the-copilot-build-method`, `bdd-stories`
-- **Invocable**: Subagent only (orchestrator delegates)
-
-### Reviewer
-- **Phase**: 4A (Local Autopilot Execution)
-- **Role**: Code review for correctness, security (OWASP Top 10), architecture compliance, and conventions.
-- **Skills**: `the-copilot-build-method`, `code-quality`
-- **Invocable**: Subagent only (orchestrator delegates)
-
-### Troubleshooter
-- **Phase**: 4A (Failure Recovery)
-- **Role**: Diagnoses and fixes failed stories. Root-cause analysis, minimal fix, verification.
-- **Skills**: `the-copilot-build-method`, `bdd-stories`, `code-quality`
-- **Invocable**: Subagent only (orchestrator delegates)
-
-> **Archived agents**: `implementer`, `tester`, `refactorer`, and `documenter` have been retired. See `.github/agents/archive/` for historical reference. The developer agent replaces implementer+tester; refactoring is handled by the reviewer at epic boundaries; changelog/release notes are generated by the orchestrator.
-
----
-
-## Loom Agents (Phase 4B — Server-side PR Weaving)
-
-These agents work exclusively in **Loom weaving mode** (`/run-loom`). They drive the deterministic [Loom](https://github.com/guillaume7/loom) state machine to create GitHub issues, assign `@copilot`, poll for PRs, gate merges, and merge approved PRs — all without human intervention.
-
-### Loom MCP Operator
-- **Phase**: 4B (Server-side PR Weaving)
-- **Role**: Persistent master-session operator. Drives Loom MCP tools (`loom_next_step`, `loom_checkpoint`, `loom_heartbeat`, `loom_get_state`, `loom_abort`) and executes one GitHub action per checkpoint.
-- **Skills**: `loom-mcp-loop`
-- **Invocable**: By user (via `/run-loom`)
-
-### Loom Orchestrator
-- **Phase**: 4B (Server-side PR Weaving)
-- **Role**: End-to-end FSM driver with structured handoffs to loom-gate, loom-debug, and loom-merge.
-- **Skills**: `loom-mcp-loop`
-- **Invocable**: Subagent only (loom-mcp-operator delegates)
-
-### Loom Gate
-- **Phase**: 4B (Server-side PR Weaving)
-- **Role**: Read-only pre-merge checker. Verifies CI status, approvals, draft state, and merge conflicts before any merge attempt.
-- **Skills**: none (uses GitHub MCP tools directly)
-- **Invocable**: Subagent only (loom-orchestrator delegates)
-
-### Loom Debug
-- **Phase**: 4B (Server-side PR Weaving)
-- **Role**: CI failure diagnostician. Inspects check run logs and posts a structured debug comment on the PR.
-- **Skills**: none (uses GitHub MCP tools directly)
-- **Invocable**: Subagent only (loom-orchestrator delegates)
-
-### Loom Merge
-- **Phase**: 4B (Server-side PR Weaving)
-- **Role**: Merge-only agent. Calls `merge_pull_request` and returns structured JSON. Does nothing else.
-- **Skills**: none (uses GitHub MCP tools directly)
-- **Invocable**: Subagent only (loom-orchestrator delegates)
-
-## Agent ↔ Skill Matrix
-
-| Agent | `the-copilot-build-method` | `bdd-stories` | `backlog-management` | `code-quality` | `architecture-decisions` | `loom-mcp-loop` |
-|:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| orchestrator | ✓ | | ✓ | | | |
-| product-owner | ✓ | ✓ | ✓ | | | |
-| architect | ✓ | | | | ✓ | |
-| developer | ✓ | ✓ | | | | |
-| reviewer | ✓ | | | ✓ | | |
-| troubleshooter | ✓ | ✓ | | ✓ | | |
-| loom-mcp-operator | | | | | | ✓ |
-| loom-orchestrator | | | | | | ✓ |
-| loom-gate | | | | | | |
-| loom-debug | | | | | | |
-| loom-merge | | | | | | |
-
-## Agent ↔ MCP & CLI Tools Matrix
-
-| Agent | GitHub MCP | Loom MCP | Playwright MCP | git CLI | gh CLI |
-|:---|:---:|:---:|:---:|:---:|:---:|
-| orchestrator | ✓ | | | ✓ | ✓ |
-| product-owner | ✓ | | | ✓ | ✓ |
-| architect | ✓ | | | ✓ | |
-| developer | ✓ | | ✓ | ✓ | ✓ |
-| reviewer | ✓ | | | ✓ | |
-| troubleshooter | ✓ | | | ✓ | ✓ |
-| loom-mcp-operator | ✓ | ✓ | | | |
-| loom-orchestrator | ✓ | ✓ | | | |
-| loom-gate | ✓ | | | | |
-| loom-debug | ✓ | | | | |
-| loom-merge | ✓ | | | | |
-
-**GitHub MCP** — `github/github-mcp-server/default`: search repos/code, manage PRs, read CI check runs, post comments  
-**Loom MCP** — `loom/loom_*`: drive the Loom FSM (`loom_next_step`, `loom_checkpoint`, `loom_heartbeat`, `loom_get_state`, `loom_abort`)  
-**Playwright MCP** — `playwright`: browser automation for end-to-end UI tests  
-**git CLI** — `git status/diff/log/blame/commit`: file diffs, commit history, making commits  
-**gh CLI** — `gh run view/list`, `gh pr list`: CI log retrieval, PR status, issue management
-
-## Lifecycle Prompts
-
-| Prompt | Agent(s) | Phase |
-|:---|:---|:---|
-| `/kickstart-vision` | ask (interactive) | 1 |
-| `/plan-product` | architect → product-owner | 2-3 |
-| `/run-autopilot` | orchestrator → all | 4A (local) |
-| `/run-loom` | loom-mcp-operator → loom squad | 4B (server-side) |
-| `/review` | reviewer | 4A (ad-hoc) |
-| `/troubleshoot` | troubleshooter | 4A (ad-hoc) |
+| Prompt | Purpose |
+| --- | --- |
+| `/kickstart-vision` | Align on a new or revised product vision |
+| `/plan-product` | Run architecture, then planning |
+| `/run-autopilot` | Execute the backlog locally |

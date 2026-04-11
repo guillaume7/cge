@@ -92,6 +92,176 @@ func TestServiceRunExecutesGraphBackedConditionWithWorkflowPrimitives(t *testing
 	assertExists(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", result.RunID, record.WorkflowStartResponseRef))
 }
 
+func TestServiceRunExecutesWithHarnessConditionWithWorkflowPrimitives(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager := initLabRepo(t)
+	service := NewService(manager)
+	if _, err := service.Init(context.Background(), repoDir); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	writeSuiteWithSingleTask(t, repoDir)
+
+	runner := &stubWorkflowRunner{}
+	service.NowForTest(func() time.Time {
+		return time.Date(2026, 4, 1, 10, 30, 0, 0, time.UTC)
+	})
+	service.WorkflowRunnerForTest(runner)
+
+	result, err := service.Run(context.Background(), repoDir, RunRequest{
+		TaskID:          "task-001",
+		ConditionID:     "with-harness",
+		Model:           "claude-sonnet",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if result.Execution.GraphBacked {
+		t.Fatalf("execution.graph_backed = true, want false for with-harness condition")
+	}
+	if !result.Execution.UsesWorkflowPrimitives {
+		t.Fatalf("execution.uses_workflow_primitives = false, want true for with-harness condition")
+	}
+	if !result.Execution.KickoffUsed || !result.Execution.HandoffUsed {
+		t.Fatalf("execution = %#v, want kickoff and handoff used", result.Execution)
+	}
+	if result.Execution.WorkflowMode != WorkflowModeWithHarness {
+		t.Fatalf("workflow_mode = %q, want %q", result.Execution.WorkflowMode, WorkflowModeWithHarness)
+	}
+	if len(runner.startCalls) != 1 {
+		t.Fatalf("start calls = %d, want 1", len(runner.startCalls))
+	}
+	if len(runner.finishPayloads) != 1 {
+		t.Fatalf("finish payload count = %d, want 1", len(runner.finishPayloads))
+	}
+
+	record := readRunRecord(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", result.RunID, "run.json"))
+	if record.ConditionID != "with-harness" {
+		t.Fatalf("record condition_id = %q, want with-harness", record.ConditionID)
+	}
+	if record.Telemetry == nil || record.Telemetry.DelegatedSessions == nil || *record.Telemetry.DelegatedSessions != 2 {
+		t.Fatalf("record telemetry = %#v, want delegated_sessions=2 for harness run", record.Telemetry)
+	}
+	if got := record.WorkflowStartResponseRef; got != "artifacts/workflow-start-response.json" {
+		t.Fatalf("workflow_start_response_ref = %q, want workflow start response ref", got)
+	}
+	assertExists(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", result.RunID, record.WorkflowStartResponseRef))
+}
+
+func TestServiceRunExecutesWithoutHarnessConditionAsBaseline(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager := initLabRepo(t)
+	service := NewService(manager)
+	if _, err := service.Init(context.Background(), repoDir); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	writeSuiteWithSingleTask(t, repoDir)
+
+	runner := &stubWorkflowRunner{}
+	service.NowForTest(func() time.Time {
+		return time.Date(2026, 4, 1, 10, 30, 0, 0, time.UTC)
+	})
+	service.WorkflowRunnerForTest(runner)
+
+	result, err := service.Run(context.Background(), repoDir, RunRequest{
+		TaskID:          "task-001",
+		ConditionID:     "without-harness",
+		Model:           "claude-sonnet",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if result.Execution.GraphBacked {
+		t.Fatalf("execution.graph_backed = true, want false for without-harness condition")
+	}
+	if result.Execution.UsesWorkflowPrimitives {
+		t.Fatalf("execution.uses_workflow_primitives = true, want false for without-harness condition")
+	}
+	if result.Execution.KickoffUsed || result.Execution.HandoffUsed {
+		t.Fatalf("execution = %#v, want no kickoff or handoff", result.Execution)
+	}
+	if result.Execution.WorkflowMode != WorkflowModeWithoutHarness {
+		t.Fatalf("workflow_mode = %q, want %q", result.Execution.WorkflowMode, WorkflowModeWithoutHarness)
+	}
+	if len(runner.startCalls) != 0 || len(runner.finishPayloads) != 0 {
+		t.Fatalf("runner calls = start:%#v finish:%#v, want none for baseline condition", runner.startCalls, runner.finishPayloads)
+	}
+
+	record := readRunRecord(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", result.RunID, "run.json"))
+	if record.Telemetry == nil || record.Telemetry.DelegatedSessions == nil || *record.Telemetry.DelegatedSessions != 1 {
+		t.Fatalf("record telemetry = %#v, want delegated_sessions=1 for baseline run", record.Telemetry)
+	}
+	if got := record.BaselinePromptMetadataRef; got != "artifacts/baseline-prompt-metadata.json" {
+		t.Fatalf("baseline_prompt_metadata_ref = %q, want baseline prompt metadata ref", got)
+	}
+	assertExists(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", result.RunID, record.BaselinePromptMetadataRef))
+}
+
+func TestServiceRunExecutesGraphOnlyConditionWithWorkflowPrimitives(t *testing.T) {
+	t.Parallel()
+
+	repoDir, manager := initLabRepo(t)
+	service := NewService(manager)
+	if _, err := service.Init(context.Background(), repoDir); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+
+	writeSuiteWithSingleTask(t, repoDir)
+
+	runner := &stubWorkflowRunner{}
+	service.NowForTest(func() time.Time {
+		return time.Date(2026, 4, 1, 10, 30, 0, 0, time.UTC)
+	})
+	service.WorkflowRunnerForTest(runner)
+
+	result, err := service.Run(context.Background(), repoDir, RunRequest{
+		TaskID:          "task-001",
+		ConditionID:     "graph-only",
+		Model:           "claude-sonnet",
+		SessionTopology: "delegated-parallel",
+		Seed:            42,
+	})
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if result.Execution.GraphBacked {
+		t.Fatalf("execution.graph_backed = true, want false for graph-only condition")
+	}
+	if !result.Execution.UsesWorkflowPrimitives {
+		t.Fatalf("execution.uses_workflow_primitives = false, want true for graph-only condition")
+	}
+	if !result.Execution.KickoffUsed || !result.Execution.HandoffUsed {
+		t.Fatalf("execution = %#v, want kickoff and handoff used", result.Execution)
+	}
+	if result.Execution.WorkflowMode != WorkflowModeGraphOnly {
+		t.Fatalf("workflow_mode = %q, want %q", result.Execution.WorkflowMode, WorkflowModeGraphOnly)
+	}
+	if len(runner.startCalls) != 1 {
+		t.Fatalf("start calls = %d, want 1", len(runner.startCalls))
+	}
+	if len(runner.finishPayloads) != 1 {
+		t.Fatalf("finish payload count = %d, want 1", len(runner.finishPayloads))
+	}
+
+	record := readRunRecord(t, filepath.Join(repoDir, repo.WorkspaceDirName, repo.LabDirName, "runs", result.RunID, "run.json"))
+	if record.ConditionID != "graph-only" {
+		t.Fatalf("record condition_id = %q, want graph-only", record.ConditionID)
+	}
+	if record.Telemetry == nil || record.Telemetry.DelegatedSessions == nil || *record.Telemetry.DelegatedSessions != 2 {
+		t.Fatalf("record telemetry = %#v, want delegated_sessions=2 for graph-only run", record.Telemetry)
+	}
+}
+
 func TestServiceRunExecutesBaselineConditionWithoutWorkflowPrimitives(t *testing.T) {
 	t.Parallel()
 

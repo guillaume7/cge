@@ -1,6 +1,6 @@
 backlog:
   project: cognitive-graph-engine
-  last-updated: 2026-03-28T11:55:00Z
+  last-updated: 2026-04-09T08:37:57Z
   themes:
   - id: TH1
     name: Cognitive Graph Engine MVP
@@ -503,3 +503,131 @@ backlog:
         file: docs/themes/TH7-verification-calibrated-audit-kickoff/epics/E3-verification-rerun-attribution-and-gate/stories/US3-gate-full-rerun-on-verification-neutrality.md
         depends-on:
         - TH7.E3.US2
+  - id: TH8
+    name: Copilot-First Evaluator Loop and Decision Harness
+    status: done
+    locked: false
+    vision-ref: docs/vision_of_product/VP8-cge-2-new-architecture/
+    depends-on:
+    - TH7
+    epics:
+    - id: TH8.E1
+      name: Context Evaluator Foundation
+      status: done
+      depends-on: []
+      stories:
+      - id: TH8.E1.US1
+        title: Score candidate context bundles on relevance, consistency, and usefulness
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E1-context-evaluator-foundation/stories/US1-score-candidate-context-bundles.md
+        depends-on: []
+      - id: TH8.E1.US2
+        title: Compute composite confidence from evaluation dimensions
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E1-context-evaluator-foundation/stories/US2-compute-composite-confidence.md
+        depends-on:
+        - TH8.E1.US1
+      - id: TH8.E1.US3
+        title: Evaluate candidate task outputs for iterative critique
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E1-context-evaluator-foundation/stories/US3-evaluate-candidate-task-outputs.md
+        depends-on:
+        - TH8.E1.US2
+    - id: TH8.E2
+      name: Normalized Decision Outcomes
+      status: done
+      depends-on:
+      - TH8.E1
+      stories:
+      - id: TH8.E2.US1
+        title: Implement the five normalized decision outcomes
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E2-normalized-decision-outcomes/stories/US1-implement-five-decision-outcomes.md
+        depends-on:
+        - TH8.E1.US3
+      - id: TH8.E2.US2
+        title: Select outcomes via configurable confidence thresholds
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E2-normalized-decision-outcomes/stories/US2-threshold-driven-outcome-selection.md
+        depends-on:
+        - TH8.E2.US1
+      - id: TH8.E2.US3
+        title: Compose machine-readable decision envelopes
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E2-normalized-decision-outcomes/stories/US3-machine-readable-decision-envelopes.md
+        depends-on:
+        - TH8.E2.US2
+    - id: TH8.E3
+      name: Attribution and Copilot CLI Integration
+      status: done
+      depends-on:
+      - TH8.E2
+      stories:
+      - id: TH8.E3.US1
+        title: Generate structured attribution records for every decision
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E3-attribution-and-copilot-integration/stories/US1-generate-attribution-records.md
+        depends-on:
+        - TH8.E2.US3
+      - id: TH8.E3.US2
+        title: Persist and retrieve attribution records in the local workspace
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E3-attribution-and-copilot-integration/stories/US2-persist-and-retrieve-attribution.md
+        depends-on:
+        - TH8.E3.US1
+      - id: TH8.E3.US3
+        title: Wire the evaluator loop into graph context and workflow start
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E3-attribution-and-copilot-integration/stories/US3-wire-evaluator-loop-into-cli.md
+        depends-on:
+        - TH8.E3.US2
+    - id: TH8.E4
+      name: Evaluated Graph Memory Discipline
+      status: done
+      depends-on:
+      - TH8.E2
+      stories:
+      - id: TH8.E4.US1
+        title: Gate workflow-mediated memory writes on evaluator confidence
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E4-evaluated-graph-memory-discipline/stories/US1-gate-writes-on-evaluator-confidence.md
+        depends-on:
+        - TH8.E2.US3
+      - id: TH8.E4.US2
+        title: Down-rank low-confidence graph entities during retrieval
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E4-evaluated-graph-memory-discipline/stories/US2-down-rank-low-confidence-entities.md
+        depends-on:
+        - TH8.E4.US1
+      - id: TH8.E4.US3
+        title: Preserve raw graph write backward compatibility
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E4-evaluated-graph-memory-discipline/stories/US3-preserve-raw-write-compatibility.md
+        depends-on:
+        - TH8.E4.US2
+    - id: TH8.E5
+      name: Harness-Aware Lab Conditions
+      status: done
+      depends-on:
+      - TH8.E3
+      - TH8.E4
+      stories:
+      - id: TH8.E5.US1
+        title: Add harness-aware experiment conditions
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E5-harness-aware-lab-conditions/stories/US1-add-harness-aware-conditions.md
+        depends-on:
+        - TH8.E3.US3
+        - TH8.E4.US3
+      - id: TH8.E5.US2
+        title: Surface token-decline comparisons in lab reports
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E5-harness-aware-lab-conditions/stories/US2-token-decline-lab-metric.md
+        depends-on:
+        - TH8.E5.US1
+      - id: TH8.E5.US3
+        title: Detect over-abstention and aggregate attribution in lab reports
+        status: done
+        file: docs/themes/TH8-copilot-first-evaluator-loop/epics/E5-harness-aware-lab-conditions/stories/US3-over-abstention-and-attribution-aggregation.md
+        depends-on:
+        - TH8.E5.US2

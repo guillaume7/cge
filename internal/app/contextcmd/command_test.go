@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/guillaume-galp/cge/internal/app/attributionrecorder"
 	"github.com/guillaume-galp/cge/internal/app/contextprojector"
 	"github.com/guillaume-galp/cge/internal/app/retrieval"
 	"github.com/guillaume-galp/cge/internal/infra/repo"
@@ -48,7 +49,7 @@ func TestContextCommandReturnsStructuredSuccessEnvelope(t *testing.T) {
 		},
 	}
 
-	cmd := newCommand(repoDir, manager, querier, contextprojector.NewProjector())
+	cmd := newCommand(repoDir, manager, querier, contextprojector.NewProjector(), attributionrecorder.New())
 	stdout := &bytes.Buffer{}
 	cmd.SetOut(stdout)
 	cmd.SetErr(&bytes.Buffer{})
@@ -105,7 +106,7 @@ func TestContextCommandWritesEquivalentStructuredOutputToFile(t *testing.T) {
 		},
 	}
 
-	stdoutCmd := newCommand(repoDir, manager, querier, contextprojector.NewProjector())
+	stdoutCmd := newCommand(repoDir, manager, querier, contextprojector.NewProjector(), attributionrecorder.New())
 	stdout := &bytes.Buffer{}
 	stdoutCmd.SetOut(stdout)
 	stdoutCmd.SetErr(&bytes.Buffer{})
@@ -117,7 +118,7 @@ func TestContextCommandWritesEquivalentStructuredOutputToFile(t *testing.T) {
 	}
 
 	outputPath := filepath.Join(t.TempDir(), "context.json")
-	fileCmd := newCommand(repoDir, manager, querier, contextprojector.NewProjector())
+	fileCmd := newCommand(repoDir, manager, querier, contextprojector.NewProjector(), attributionrecorder.New())
 	fileStdout := &bytes.Buffer{}
 	fileCmd.SetOut(fileStdout)
 	fileCmd.SetErr(&bytes.Buffer{})
@@ -137,7 +138,29 @@ func TestContextCommandWritesEquivalentStructuredOutputToFile(t *testing.T) {
 		t.Fatalf("os.ReadFile output: %v", err)
 	}
 
-	if !bytes.Equal(filePayload, stdout.Bytes()) {
+	// Normalize the attribution_id before comparison: each command run
+	// generates a fresh random ID, so we verify format parity by stripping
+	// attribution IDs before the byte comparison.
+	normalizeAttributionID := func(b []byte) []byte {
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			return b
+		}
+		if result, ok := m["result"].(map[string]any); ok {
+			if decision, ok := result["decision"].(map[string]any); ok {
+				if attr, ok := decision["attribution"].(map[string]any); ok {
+					attr["attribution_id"] = ""
+				}
+			}
+		}
+		out, err := json.Marshal(m)
+		if err != nil {
+			return b
+		}
+		return out
+	}
+
+	if !bytes.Equal(normalizeAttributionID(filePayload), normalizeAttributionID(stdout.Bytes())) {
 		t.Fatalf("file payload != stdout payload\nstdout: %s\nfile: %s", stdout.Bytes(), filePayload)
 	}
 }
@@ -146,7 +169,7 @@ func TestContextCommandReturnsStructuredValidationError(t *testing.T) {
 	t.Parallel()
 
 	repoDir, manager := initContextWorkspace(t)
-	cmd := newCommand(repoDir, manager, &spyQuerier{}, contextprojector.NewProjector())
+	cmd := newCommand(repoDir, manager, &spyQuerier{}, contextprojector.NewProjector(), attributionrecorder.New())
 	stdout := &bytes.Buffer{}
 	cmd.SetOut(stdout)
 	cmd.SetErr(&bytes.Buffer{})
@@ -190,7 +213,7 @@ func TestContextCommandReturnsStructuredOperationalIndexError(t *testing.T) {
 		Code:    "text_index_corrupt",
 		Message: "local text index is unreadable; rebuild is required",
 		Details: map[string]any{"rebuild_hint": "remove the corrupted index file and rerun graph query to rebuild from persisted graph data"},
-	}}, contextprojector.NewProjector())
+	}}, contextprojector.NewProjector(), attributionrecorder.New())
 	stdout := &bytes.Buffer{}
 	cmd.SetOut(stdout)
 	cmd.SetErr(&bytes.Buffer{})

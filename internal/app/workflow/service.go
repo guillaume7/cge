@@ -10,8 +10,11 @@ import (
 	"slices"
 	"time"
 
+	"github.com/guillaume-galp/cge/internal/app/attribution"
 	"github.com/guillaume-galp/cge/internal/app/cmdsupport"
 	"github.com/guillaume-galp/cge/internal/app/contextprojector"
+	"github.com/guillaume-galp/cge/internal/app/contextevaluator"
+	"github.com/guillaume-galp/cge/internal/app/decisionengine"
 	"github.com/guillaume-galp/cge/internal/app/retrieval"
 	"github.com/guillaume-galp/cge/internal/infra/benchmarks"
 	"github.com/guillaume-galp/cge/internal/infra/kuzu"
@@ -27,17 +30,25 @@ type Service struct {
 	querier        KickoffQuerier
 	projector      KickoffProjector
 	benchmarkStore BenchmarkStore
+	evaluator      *contextevaluator.Evaluator
+	decisionEngine *decisionengine.Engine
+	attribution    *attribution.Recorder
 	now            func() time.Time
 }
 
 func NewService(manager *repo.Manager) *Service {
+	eval := contextevaluator.NewEvaluator(contextevaluator.Config{})
+	eng := decisionengine.NewWithDefaults()
 	return &Service{
 		manager:        manager,
 		writer:         kuzu.NewStore(),
 		reader:         kuzu.NewStore(),
-		querier:        retrieval.NewEngine(nil, nil),
+		querier:        retrieval.NewEngine(nil, nil).WithEvaluator(&eval),
 		projector:      contextprojector.NewProjector(),
 		benchmarkStore: benchmarks.NewStore(),
+		evaluator:      &eval,
+		decisionEngine: &eng,
+		attribution:    attribution.NewRecorder(),
 		now:            func() time.Time { return time.Now().UTC() },
 	}
 }
@@ -47,6 +58,27 @@ func (s *Service) NowForTest(now func() time.Time) {
 		return
 	}
 	s.now = now
+}
+
+func (s *Service) EvaluatorForTest(eval *contextevaluator.Evaluator) {
+	if s == nil {
+		return
+	}
+	s.evaluator = eval
+}
+
+func (s *Service) DecisionEngineForTest(eng *decisionengine.Engine) {
+	if s == nil {
+		return
+	}
+	s.decisionEngine = eng
+}
+
+func (s *Service) AttributionRecorderForTest(rec *attribution.Recorder) {
+	if s == nil {
+		return
+	}
+	s.attribution = rec
 }
 
 func (s *Service) SeedWriterForTest(writer SeedWriter) {

@@ -5,9 +5,8 @@ description: 'ADR format, tech stack analysis methodology, component boundary de
 
 # Architecture Decisions Skill
 
-## ADR Format
-
-Architecture Decision Records live in `docs/ADRs/ADR-<NNN>-<slug>.md`.
+Architecture Decision Records live in
+`docs/architecture/adrs/ADR-<NNN>-<slug>.md`.
 
 ### Template
 
@@ -65,7 +64,7 @@ Once an ADR's status is `Accepted` **and** its associated theme is `locked` (see
 - In the new ADR, reference the old one in its context (e.g., "Supersedes ADR-001")
 - Update the old ADR's `Status` line to `Superseded by ADR-<NNN>` — this is the **only permitted edit** to a locked ADR
 
-## Tech Stack Analysis
+## Tech stack analysis
 
 When choosing technologies, evaluate along these dimensions:
 
@@ -84,9 +83,9 @@ When choosing technologies, evaluate along these dimensions:
 
 Always start with the simplest architecture that satisfies the vision's requirements. Complexity is added only when justified by concrete, documented NFRs — not hypothetical future needs.
 
-## Component Boundaries
+## Component boundaries
 
-### Defining Components
+### Defining components
 
 Each component in `docs/architecture/components.md` should specify:
 - **Responsibility**: What it does (single sentence)
@@ -100,11 +99,12 @@ Each component in `docs/architecture/components.md` should specify:
 - Cross-cutting concerns (logging, auth, config) are separate shared components
 - New dependencies require architectural review (check against ADRs)
 
-## Architecture Document Structure
+## Architecture document structure
 
 ```
 docs/architecture/
-├── README.md           # System context + high-level design
+├── README.md            # System context + high-level design
+├── adrs/                # Architecture Decision Records
 ├── tech-stack.md        # Chosen technologies with rationale
 ├── components.md        # Component breakdown and boundaries
 ├── data-model.md        # Data entities, storage, relationships
@@ -121,7 +121,8 @@ Include when the product has a deployment target beyond local development. Cover
 - Rollback strategy and blue/green or canary deployment
 - Environment configuration management
 
-Each significant decision is cross-referenced with its ADR in `docs/ADRs/`.
+Each significant decision is cross-referenced with its ADR in
+`docs/architecture/adrs/`.
 
 ## Git Workflow
 

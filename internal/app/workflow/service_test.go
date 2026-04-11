@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/guillaume-galp/cge/internal/app/cmdsupport"
+	"github.com/guillaume-galp/cge/internal/app/decisionengine"
 	graphpayload "github.com/guillaume-galp/cge/internal/domain/payload"
 	"github.com/guillaume-galp/cge/internal/infra/kuzu"
 	"github.com/guillaume-galp/cge/internal/infra/repo"
@@ -1073,6 +1074,13 @@ func TestServiceFinishPersistsDelegatedOutcomeAndReturnsHandoffEnvelope(t *testi
 }`)
 
 	service := NewService(manager)
+	// Inject a very low write threshold so the default evaluator approves the write;
+	// this test exercises Finish plumbing, not write-gate behaviour.
+	eng, err := decisionengineForTest(0.01, 0.005)
+	if err != nil {
+		t.Fatalf("creating test engine: %v", err)
+	}
+	service.DecisionEngineForTest(&eng)
 	result, err := service.Finish(context.Background(), repoDir, `{
   "schema_version": "v1",
   "metadata": {
@@ -1682,4 +1690,285 @@ func mustManifestAsset(t *testing.T, manifest Manifest, assetPath string) Asset 
 	}
 	t.Fatalf("manifest asset %q not found", assetPath)
 	return Asset{}
+}
+
+// TH8.E4.US1: Write-gate integration tests
+
+// writeGateFinishPayload is a well-formed finish payload used by write-gate tests.
+const writeGateFinishPayload = `{
+  "schema_version": "v1",
+  "metadata": {
+    "agent_id": "developer",
+    "session_id": "gate-test-session",
+    "timestamp": "2026-04-01T12:00:00Z"
+  },
+  "task": "implement evaluator write gate for workflow finish",
+  "summary": "Added confidence-based write gating so low-quality memory writes are blocked before persisting to the graph. The evaluator computes composite confidence and the decision engine classifies the write as approved, deferred, or skipped.",
+  "decisions": [
+    {
+      "summary": "Use ADR-022 write-gate path in workflow finish",
+      "rationale": "Ensures only high-confidence writes reach the graph",
+      "status": "accepted"
+    }
+  ],
+  "changed_artifacts": [
+    {
+      "path": "internal/app/workflow/finish.go",
+      "summary": "Added write gate evaluation before graph commit",
+      "change_type": "updated",
+      "language": "go"
+    }
+  ]
+}`
+
+func TestServiceFinishWriteGate_Approved_WritesGraphAndRecordsAttribution(t *testing.T) {
+repoDir, manager := initWorkflowRepo(t)
+if _, err := manager.InitWorkspace(context.Background(), repoDir); err != nil {
+t.Fatalf("InitWorkspace: %v", err)
+}
+workspace, err := manager.OpenWorkspace(context.Background(), repoDir)
+if err != nil {
+t.Fatalf("OpenWorkspace: %v", err)
+}
+writeWorkflowRevision(t, workspace, `{
+  "schema_version": "v1",
+  "metadata": {"agent_id": "developer", "session_id": "seed", "timestamp": "2026-04-01T11:00:00Z"},
+  "nodes": [{"id": "project:cge", "kind": "ProjectMetadata", "title": "CGE", "summary": "seed"}],
+  "edges": []
+}`)
+
+service := NewService(manager)
+
+// Use a very low write threshold so the evaluator approves any non-trivial output.
+eng, err := decisionengineForTest(0.01, 0.005)
+if err != nil {
+t.Fatalf("creating test engine: %v", err)
+}
+service.DecisionEngineForTest(&eng)
+
+result, err := service.Finish(context.Background(), repoDir, writeGateFinishPayload)
+if err != nil {
+t.Fatalf("Finish: %v", err)
+}
+
+if result.WriteGate == nil {
+t.Fatal("expected WriteGate to be populated")
+}
+if result.WriteGate.Status != "approved" {
+t.Errorf("WriteGate.Status = %q, want approved", result.WriteGate.Status)
+}
+if result.WriteSummary.Status != FinishWriteStatusApplied {
+t.Errorf("WriteSummary.Status = %q, want applied — approved gate should allow write", result.WriteSummary.Status)
+}
+if result.WriteGate.AttributionID == "" {
+t.Error("WriteGate.AttributionID should be set after approved write")
+}
+if result.WriteGate.WriteThreshold != 0.01 {
+t.Errorf("WriteGate.WriteThreshold = %.4f, want 0.01 (from engine config, not defaults)", result.WriteGate.WriteThreshold)
+}
+}
+
+func TestServiceFinishWriteGate_Deferred_NoWriteButAttributionCreated(t *testing.T) {
+repoDir, manager := initWorkflowRepo(t)
+if _, err := manager.InitWorkspace(context.Background(), repoDir); err != nil {
+t.Fatalf("InitWorkspace: %v", err)
+}
+workspace, err := manager.OpenWorkspace(context.Background(), repoDir)
+if err != nil {
+t.Fatalf("OpenWorkspace: %v", err)
+}
+writeWorkflowRevision(t, workspace, `{
+  "schema_version": "v1",
+  "metadata": {"agent_id": "developer", "session_id": "seed", "timestamp": "2026-04-01T11:00:00Z"},
+  "nodes": [{"id": "project:cge", "kind": "ProjectMetadata", "title": "CGE", "summary": "seed"}],
+  "edges": []
+}`)
+
+service := NewService(manager)
+
+// write=0.99 forces deferred (composite will be between defer and write thresholds for any real output)
+// defer=0.01 so moderate output (which the evaluator will score above near-zero) lands in defer zone
+eng, err := decisionengineForTest(0.99, 0.01)
+if err != nil {
+t.Fatalf("creating test engine: %v", err)
+}
+service.DecisionEngineForTest(&eng)
+
+before := graphNodeCountForTest(t, workspace)
+
+result, err := service.Finish(context.Background(), repoDir, writeGateFinishPayload)
+if err != nil {
+t.Fatalf("Finish: %v", err)
+}
+
+if result.WriteGate == nil {
+t.Fatal("expected WriteGate to be populated")
+}
+if result.WriteGate.Status != "deferred" {
+t.Errorf("WriteGate.Status = %q, want deferred", result.WriteGate.Status)
+}
+if result.WriteSummary.Status != FinishWriteStatusNoOp {
+t.Errorf("WriteSummary.Status = %q, want no_op — deferred gate should not write", result.WriteSummary.Status)
+}
+
+after := graphNodeCountForTest(t, workspace)
+if after != before {
+t.Errorf("graph node count changed from %d to %d; deferred should not write", before, after)
+}
+
+if result.WriteGate.AttributionID == "" {
+t.Error("WriteGate.AttributionID should be set after deferred decision")
+}
+}
+
+func TestServiceFinishWriteGate_Skipped_NoWriteButAttributionCreated(t *testing.T) {
+repoDir, manager := initWorkflowRepo(t)
+if _, err := manager.InitWorkspace(context.Background(), repoDir); err != nil {
+t.Fatalf("InitWorkspace: %v", err)
+}
+workspace, err := manager.OpenWorkspace(context.Background(), repoDir)
+if err != nil {
+t.Fatalf("OpenWorkspace: %v", err)
+}
+writeWorkflowRevision(t, workspace, `{
+  "schema_version": "v1",
+  "metadata": {"agent_id": "developer", "session_id": "seed", "timestamp": "2026-04-01T11:00:00Z"},
+  "nodes": [{"id": "project:cge", "kind": "ProjectMetadata", "title": "CGE", "summary": "seed"}],
+  "edges": []
+}`)
+
+service := NewService(manager)
+
+// defer=0.99 forces skipped (composite below defer threshold for any output)
+eng, err := decisionengineForTest(0.999, 0.99)
+if err != nil {
+t.Fatalf("creating test engine: %v", err)
+}
+service.DecisionEngineForTest(&eng)
+
+before := graphNodeCountForTest(t, workspace)
+
+result, err := service.Finish(context.Background(), repoDir, writeGateFinishPayload)
+if err != nil {
+t.Fatalf("Finish: %v", err)
+}
+
+if result.WriteGate == nil {
+t.Fatal("expected WriteGate to be populated")
+}
+if result.WriteGate.Status != "skipped" {
+t.Errorf("WriteGate.Status = %q, want skipped", result.WriteGate.Status)
+}
+if result.WriteSummary.Status != FinishWriteStatusNoOp {
+t.Errorf("WriteSummary.Status = %q, want no_op — skipped gate should not write", result.WriteSummary.Status)
+}
+
+after := graphNodeCountForTest(t, workspace)
+if after != before {
+t.Errorf("graph node count changed from %d to %d; skipped should not write", before, after)
+}
+
+if result.WriteGate.AttributionID == "" {
+t.Error("WriteGate.AttributionID should be set after skipped decision")
+}
+}
+
+func TestServiceFinishWriteGate_RecordsActualEngineThresholds_NotDefaults(t *testing.T) {
+repoDir, manager := initWorkflowRepo(t)
+if _, err := manager.InitWorkspace(context.Background(), repoDir); err != nil {
+t.Fatalf("InitWorkspace: %v", err)
+}
+workspace, err := manager.OpenWorkspace(context.Background(), repoDir)
+if err != nil {
+t.Fatalf("OpenWorkspace: %v", err)
+}
+writeWorkflowRevision(t, workspace, `{
+  "schema_version": "v1",
+  "metadata": {"agent_id": "developer", "session_id": "seed", "timestamp": "2026-04-01T11:00:00Z"},
+  "nodes": [{"id": "project:cge", "kind": "ProjectMetadata", "title": "CGE", "summary": "seed"}],
+  "edges": []
+}`)
+
+service := NewService(manager)
+
+customWrite := 0.87
+customDefer := 0.43
+eng, err := decisionengineForTest(customWrite, customDefer)
+if err != nil {
+t.Fatalf("creating test engine: %v", err)
+}
+service.DecisionEngineForTest(&eng)
+
+result, err := service.Finish(context.Background(), repoDir, writeGateFinishPayload)
+if err != nil {
+t.Fatalf("Finish: %v", err)
+}
+
+if result.WriteGate == nil {
+t.Fatal("expected WriteGate to be populated")
+}
+if result.WriteGate.WriteThreshold != customWrite {
+t.Errorf("WriteGate.WriteThreshold = %.4f, want %.4f (custom, not default)", result.WriteGate.WriteThreshold, customWrite)
+}
+if result.WriteGate.DeferThreshold != customDefer {
+t.Errorf("WriteGate.DeferThreshold = %.4f, want %.4f (custom, not default)", result.WriteGate.DeferThreshold, customDefer)
+}
+}
+
+// TH8.E4.US3: Raw graph write must NOT produce attribution records.
+func TestRawGraphWrite_CreatesNoAttributionRecord(t *testing.T) {
+repoDir, manager := initWorkflowRepo(t)
+if _, err := manager.InitWorkspace(context.Background(), repoDir); err != nil {
+t.Fatalf("InitWorkspace: %v", err)
+}
+workspace, err := manager.OpenWorkspace(context.Background(), repoDir)
+if err != nil {
+t.Fatalf("OpenWorkspace: %v", err)
+}
+
+// Write directly to the graph via kuzu.Store — the raw write path.
+payload := `{
+  "schema_version": "v1",
+  "metadata": {"agent_id": "developer", "session_id": "raw-session", "timestamp": "2026-04-01T12:00:00Z"},
+  "nodes": [{"id": "component:raw-write", "kind": "Component", "title": "Raw write test", "summary": "Written via raw graph write"}],
+  "edges": []
+}`
+envelope, err := graphpayload.ParseAndValidate(payload)
+if err != nil {
+t.Fatalf("ParseAndValidate: %v", err)
+}
+if _, err := kuzu.NewStore().Write(context.Background(), workspace, envelope); err != nil {
+t.Fatalf("raw Write: %v", err)
+}
+
+// Verify no attribution files were created.
+attrDir := filepath.Join(workspace.WorkspacePath, "attribution")
+entries, err := os.ReadDir(attrDir)
+if err != nil && !os.IsNotExist(err) {
+t.Fatalf("ReadDir attribution: %v", err)
+}
+if len(entries) > 0 {
+t.Errorf("raw graph write created %d attribution record(s); want 0", len(entries))
+}
+}
+
+// helpers for write-gate tests
+
+func decisionengineForTest(write, deferT float64) (decisionengine.Engine, error) {
+return decisionengine.New(decisionengine.Thresholds{
+Injection:       0.70,
+Minimal:         0.40,
+Write:           write,
+Defer:           deferT,
+RegressionDelta: 0.10,
+})
+}
+
+func graphNodeCountForTest(t *testing.T, workspace repo.Workspace) int {
+t.Helper()
+graph, err := kuzu.NewStore().ReadGraph(context.Background(), workspace)
+if err != nil {
+t.Fatalf("ReadGraph: %v", err)
+}
+return len(graph.Nodes)
 }

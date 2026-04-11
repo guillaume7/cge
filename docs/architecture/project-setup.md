@@ -1,4 +1,4 @@
-# Project Setup — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4
+# Project Setup — Cognitive Graph Engine VP1 + VP2 + VP3 + VP4 + VP8
 
 ## Repository Structure
 
@@ -22,28 +22,14 @@ internal/
     benchmarkcmd/
     labcmd/
     workflow/
-  domain/
-    entity/
+    contextevaluator/
+    decisionengine/
+    attributionrecorder/
     retrieval/
-    payload/
-    revision/
-    hygiene/
-    stats/
     lab/
-      orchestrator/
-      ledger/
-      evaluation/
-      report/
-  infra/
-    repo/
-    kuzu/
-    index/
-    workflowassets/
-    benchmarks/
-    labstore/
 docs/
   architecture/
-  ADRs/
+    adrs/
   vision_of_product/
 testdata/
   payloads/
@@ -62,6 +48,7 @@ Recommended repo-local workspace:
   workflow/
     manifest.json
   benchmarks/
+  attribution/
   lab/
     suite.json
     conditions.json
@@ -79,6 +66,7 @@ Notes:
 - `index/` stores the derived text index
 - `workflow/manifest.json` stores workflow asset installation and refresh state
 - `benchmarks/` stores local benchmark scenarios and machine-readable reports
+- `attribution/` stores evaluator-loop attribution records for lab analysis
 - `lab/` stores the experiment workspace: suite manifests, conditions, run
   records, evaluations, and generated reports
 - `config.json` stores schema version and repo identity metadata
@@ -127,6 +115,11 @@ Minimum test layers:
 - evaluation record creation and blinded presentation tests
 - report generation determinism and statistical correctness tests
 - condition assignment and randomization tests
+- context evaluator scoring tests for relevance, consistency, and usefulness
+- decision engine threshold and outcome selection tests
+- attribution record generation, persistence, and loading tests
+- evaluator loop integration tests through `graph context` and `workflow start`
+- harness-aware lab condition assignment tests
 
 ## Setup Principles
 
@@ -137,10 +130,12 @@ Minimum test layers:
 - explicit local workflows for stats and hygiene without background daemons
 - explicit delegated-task workflow support without a local service process
 - explicit experiment lab lifecycle through `graph lab` commands
+- evaluation-before-trust discipline through the evaluator loop for context
+  and workflow paths
 
 ## No Deployment Document For MVP
 
 The MVP is a local CLI without a service deployment target, so
 `docs/architecture/deployment.md` is intentionally omitted.
 
-This remains true for VP2, VP3, and VP4.
+This remains true for VP2, VP3, VP4, and VP8.

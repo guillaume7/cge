@@ -327,3 +327,28 @@
 ### 2026-03-28T15:00:00Z
 - documentation-update: final investment assessment recorded
 - Context: Added the final experiment conclusion document under `docs/experiments/`, linked it from the main README and experiment index, and recorded that the current CGE implementation is not a strong enough foundation for further broad product investment despite useful local wins and informative consulting feedback.
+### 2026-04-09T08:37:57Z
+- status-change: TH8 → in-progress
+- status-change: TH8.E1 → done
+- status-change: TH8.E1.US1 → done
+- status-change: TH8.E1.US2 → done
+- status-change: TH8.E1.US3 → done
+- Context: Added `internal/app/contextevaluator` with local heuristic scoring for context bundles and task outputs, configurable dimension weights, bundle aggregation, contradiction/staleness metadata, and shared term analysis exported from `internal/infra/textindex`.
+2026-04-09T15:27:52Z | Subagent completed
+2026-04-09T15:33:24Z | Subagent completed
+2026-04-09T15:33:48Z | Subagent completed
+2026-04-09T15:34:01Z | Subagent completed
+2026-04-09T15:35:01Z | Subagent completed
+2026-04-09T15:35:48Z | Subagent completed
+2026-04-09T15:36:36Z | Subagent completed
+2026-04-09T15:38:22Z | Subagent completed
+2026-04-09T15:39:40Z | Subagent completed
+2026-04-09T15:40:08Z | Subagent completed
+2026-04-09T15:41:06Z | Subagent completed
+2026-04-09T15:41:39Z | Subagent completed
+2026-04-09T15:43:11Z | Subagent completed
+2026-04-09T16:34:02Z | Subagent completed
+2026-04-09T16:34:52Z | Subagent completed
+2026-04-09T16:36:12Z | Subagent completed
+2026-04-09T16:36:35Z | Subagent completed
+2026-04-09T16:37:00Z | Subagent completed

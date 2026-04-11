@@ -68,7 +68,6 @@ The orchestrator sets `locked: true` on a theme **after** the user checkpoint at
 
 - root `README.md` and other public docs match the delivered functionality and release tag
 - release notes exist
-- completed theme issue templates have been archived
 
 ```yaml
 - id: TH1
